@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.jsonl
+last_transcript.txt
+config.json
+.DS_Store
+Thumbs.db

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "dictation": {
+    "primary_hotkey": "F2",
+    "language": "en",
+    "min_record_ms": 300,
+    "max_record_seconds": 120
+  },
+  "audio": {
+    "input_device_id": null,
+    "samplerate": 16000
+  },
+  "asr": {
+    "model_name": "ggml-base.en.bin",
+    "model_cache_dir": null
+  },
+  "insertion": {
+    "paste_delay_ms": 100,
+    "restore_delay_ms": 500,
+    "copy_to_clipboard_on_failure": true
+  },
+  "privacy": {
+    "verbose_transcript_logging": false
+  }
+}
