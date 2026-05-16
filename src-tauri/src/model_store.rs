@@ -11,9 +11,6 @@ const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main
 const CPU_ENGINE_URL: &str = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-bin-x64.zip";
 #[cfg(windows)]
 const CUDA_ENGINE_URL: &str = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-cublas-12.4.0-bin-x64.zip";
-#[cfg(target_os = "macos")]
-const MACOS_ENGINE_URL: &str = "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-macos-arm64.zip";
-
 /// Known models with their approximate sizes. SHA-256 hashes should be verified
 /// against the upstream repo before release: https://github.com/ggerganov/whisper.cpp
 const MODELS: &[ModelInfo] = &[
@@ -322,6 +319,7 @@ fn bundled_macos_engine_candidates() -> Vec<PathBuf> {
     candidates
 }
 
+#[cfg(windows)]
 fn download_engine_kind(app: &AppHandle, cache_dir: &Path, kind: EngineKind) -> Result<PathBuf> {
     let out_dir = engine_dir_for_kind(cache_dir, kind);
     std::fs::create_dir_all(&out_dir).context("failed to create engine cache directory")?;
@@ -402,14 +400,6 @@ fn download_engine_kind(app: &AppHandle, cache_dir: &Path, kind: EngineKind) -> 
         bail!("whisper-cli binary not found inside the downloaded zip");
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&dest)?.permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&dest, perms)?;
-    }
-
     Ok(dest)
 }
 
@@ -441,15 +431,6 @@ fn engine_url(kind: EngineKind) -> &'static str {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn engine_url(kind: EngineKind) -> &'static str {
-    match kind {
-        EngineKind::Macos => MACOS_ENGINE_URL,
-        EngineKind::Legacy => unreachable!("legacy engines are never downloaded"),
-        _ => unreachable!("unsupported engine kind for this platform"),
-    }
-}
-
 fn preferred_engine_kind() -> EngineKind {
     #[cfg(windows)]
     {
@@ -465,15 +446,9 @@ fn preferred_engine_kind() -> EngineKind {
     }
 }
 
+#[cfg(windows)]
 fn fallback_engine_kind() -> EngineKind {
-    #[cfg(windows)]
-    {
-        EngineKind::Cpu
-    }
-    #[cfg(target_os = "macos")]
-    {
-        EngineKind::Macos
-    }
+    EngineKind::Cpu
 }
 
 fn gpu_detected() -> bool {

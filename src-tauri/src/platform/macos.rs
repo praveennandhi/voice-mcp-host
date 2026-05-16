@@ -93,26 +93,19 @@ fn set_pasteboard_text(text: &str) -> Result<(), String> {
 // ── macOS synthetic Cmd+V ─────────────────────────────────────────────────────
 
 fn send_cmd_v() -> Result<(), String> {
-    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode};
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    let output = std::process::Command::new("osascript")
+        .args(["-e", r#"tell application "System Events" to keystroke "v" using command down"#])
+        .output()
+        .map_err(|e| format!("failed to run osascript paste: {e}"))?;
 
-    // ANSI key code for 'V'
-    const KEY_V: CGKeyCode = 9;
-
-    let src = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
-        .map_err(|_| "CGEventSource::new failed")?;
-
-    let down = CGEvent::new_keyboard_event(src.clone(), KEY_V, true)
-        .map_err(|_| "CGEvent key-down failed")?;
-    down.set_flags(CGEventFlags::CGEventFlagCommand);
-    down.post(CGEventTapLocation::HID);
-
-    let up = CGEvent::new_keyboard_event(src, KEY_V, false)
-        .map_err(|_| "CGEvent key-up failed")?;
-    up.set_flags(CGEventFlags::CGEventFlagCommand);
-    up.post(CGEventTapLocation::HID);
-
-    Ok(())
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "osascript paste failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
 }
 
 // ── macOS foreground app capture ──────────────────────────────────────────────

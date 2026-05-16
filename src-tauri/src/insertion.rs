@@ -14,6 +14,7 @@ pub fn paste_text(text: &str, paste_delay_ms: u64, restore_delay_ms: u64, fallba
     let p = platform();
 
     // Save original clipboard contents
+    #[cfg(windows)]
     let original = p.get_text().ok();
 
     // Write transcript to clipboard
@@ -46,19 +47,21 @@ pub fn paste_text(text: &str, paste_delay_ms: u64, restore_delay_ms: u64, fallba
         };
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        return PasteReport {
-            paste_status: "success".into(),
-            clipboard_restore_status: "skipped_macos_transcript_left_on_clipboard".into(),
-            error_message: String::new(),
-            recovery_action: "manual_cmd_v_available".into(),
-        };
-    }
+    let _ = restore_delay_ms;
 
+    #[cfg(target_os = "macos")]
+    return PasteReport {
+        paste_status: "success".into(),
+        clipboard_restore_status: "skipped_macos_transcript_left_on_clipboard".into(),
+        error_message: String::new(),
+        recovery_action: "manual_cmd_v_available".into(),
+    };
+
+    #[cfg(windows)]
     sleep_ms(restore_delay_ms);
 
     // Restore original clipboard
+    #[cfg(windows)]
     let restore_status = if let Some(ref orig) = original {
         match p.set_text(orig) {
             Ok(_) => "success".into(),
@@ -73,6 +76,7 @@ pub fn paste_text(text: &str, paste_delay_ms: u64, restore_delay_ms: u64, fallba
         "no_original".into()
     };
 
+    #[cfg(windows)]
     PasteReport {
         paste_status: "success".into(),
         clipboard_restore_status: restore_status,
