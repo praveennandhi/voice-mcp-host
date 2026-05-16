@@ -44,7 +44,22 @@ pub fn context(config: &WorkspaceConfig) -> String {
         );
     }
 
-    "Workspace Notes skill is available. Tools: workspace.list_files, workspace.read_file, workspace.search_files, workspace.create_note, workspace.append_note. Writes require confirmation. Paths must be relative and stay inside the configured workspace.".into()
+    let files = root_path(config)
+        .and_then(|root| {
+            let mut files = Vec::new();
+            collect_text_files(&root, &root, &mut files, 40)?;
+            Ok(files)
+        })
+        .unwrap_or_default();
+    let file_list = if files.is_empty() {
+        "No existing Markdown or text files.".to_string()
+    } else {
+        format!("Existing Markdown/text files:\n{}", files.join("\n"))
+    };
+
+    format!(
+        "Workspace Notes skill is available. Tools: workspace.list_files, workspace.read_file, workspace.search_files, workspace.save_note, workspace.create_note, workspace.append_note. Writes require confirmation. Paths must be relative and stay inside the configured workspace.\n\n{file_list}"
+    )
 }
 
 pub fn execute(config: &WorkspaceConfig, name: &str, args: &serde_json::Value) -> Result<WorkspaceToolResult> {
@@ -58,6 +73,11 @@ pub fn execute(config: &WorkspaceConfig, name: &str, args: &serde_json::Value) -
         "workspace.search_files" => {
             let query = required_string(args, "query")?;
             search_files(config, query)
+        }
+        "workspace.save_note" => {
+            let path = required_string(args, "path")?;
+            let content = required_string(args, "content")?;
+            save_note(config, path, content)
         }
         "workspace.create_note" => {
             let path = required_string(args, "path")?;
@@ -84,7 +104,7 @@ pub fn validate_tool_args(name: &str, args: &serde_json::Value) -> Result<()> {
             required_string(args, "query")?;
             Ok(())
         }
-        "workspace.create_note" | "workspace.append_note" => {
+        "workspace.save_note" | "workspace.create_note" | "workspace.append_note" => {
             required_string(args, "path")?;
             required_string(args, "content")?;
             Ok(())
@@ -94,7 +114,11 @@ pub fn validate_tool_args(name: &str, args: &serde_json::Value) -> Result<()> {
 }
 
 pub fn requires_confirmation(name: &str) -> bool {
-    matches!(name, "workspace.create_note" | "workspace.append_note")
+    matches!(name, "workspace.save_note" | "workspace.create_note" | "workspace.append_note")
+}
+
+pub fn note_exists(config: &WorkspaceConfig, rel_path: &str) -> bool {
+    safe_path(config, rel_path).is_ok_and(|path| path.is_file())
 }
 
 fn list_files(config: &WorkspaceConfig) -> Result<WorkspaceToolResult> {
@@ -154,6 +178,11 @@ fn search_files(config: &WorkspaceConfig, query: &str) -> Result<WorkspaceToolRe
         summary: format!("Found {} matches for \"{}\".", matches.len(), query),
         content: if matches.is_empty() { "No matches found.".into() } else { matches.join("\n") },
     })
+}
+
+fn save_note(config: &WorkspaceConfig, rel_path: &str, content: &str) -> Result<WorkspaceToolResult> {
+    let append = note_exists(config, rel_path);
+    write_file(config, rel_path, content, append)
 }
 
 fn write_file(config: &WorkspaceConfig, rel_path: &str, content: &str, append: bool) -> Result<WorkspaceToolResult> {
