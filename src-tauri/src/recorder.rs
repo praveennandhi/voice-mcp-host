@@ -152,7 +152,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
                                 "chars": result.text.len(),
                                 "mode": agent_runtime::mode_label(result.mode),
                             })));
-                            if result.mode == AgentOutputMode::Speak {
+                            if result.mode != AgentOutputMode::Insert {
                                 should_speak = true;
                             }
                             result.text

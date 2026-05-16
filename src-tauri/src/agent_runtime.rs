@@ -33,6 +33,31 @@ pub fn run(
         workspace_context: Some(&workspace_context),
     })?;
 
+    if result.mode == AgentOutputMode::Insert {
+        if let Some(tool) = coerce_workspace_note_write(command, &result.text) {
+            if let Err(e) = workspace::validate_tool_args(&tool.name, &tool.args) {
+                let text = format!("I could not prepare that workspace action: {e}. Please include the file name and content.");
+                append_turns(state, command, &text, "speak");
+                return Ok(AgentResult {
+                    mode: AgentOutputMode::Speak,
+                    text,
+                    tool_call: None,
+                });
+            }
+            *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
+                user_command: command.trim().to_string(),
+                tool: tool.clone(),
+            });
+            let text = confirmation_text(&tool);
+            append_turns(state, command, &text, "confirm");
+            return Ok(AgentResult {
+                mode: AgentOutputMode::Speak,
+                text,
+                tool_call: None,
+            });
+        }
+    }
+
     if result.mode != AgentOutputMode::Tool {
         append_turns(state, command, &result.text, mode_label(result.mode));
         return Ok(result);
@@ -142,6 +167,42 @@ fn confirmation_text(tool: &ToolCall) -> String {
         "workspace.append_note" => format!("Append to `{path}` in your workspace?"),
         _ => format!("Run `{}` in your workspace?", tool.name),
     }
+}
+
+fn coerce_workspace_note_write(command: &str, content: &str) -> Option<ToolCall> {
+    let lower = command.to_ascii_lowercase();
+    let asks_for_workspace = lower.contains("workspace");
+    let asks_for_note = lower.contains("note") || lower.contains(".md") || lower.contains("markdown");
+    let asks_for_write = lower.contains("create")
+        || lower.contains("save")
+        || lower.contains("write")
+        || lower.contains("put")
+        || lower.contains("add");
+
+    if !(asks_for_workspace && asks_for_note && asks_for_write) {
+        return None;
+    }
+
+    let path = extract_markdown_path(command)?;
+    Some(ToolCall {
+        name: "workspace.create_note".into(),
+        args: serde_json::json!({
+            "path": path,
+            "content": content.trim(),
+        }),
+    })
+}
+
+fn extract_markdown_path(command: &str) -> Option<String> {
+    for raw in command.split_whitespace() {
+        let cleaned = raw.trim_matches(|c: char| {
+            c == '"' || c == '\'' || c == '`' || c == ',' || c == '.' || c == ':' || c == ';'
+        });
+        if cleaned.to_ascii_lowercase().ends_with(".md") {
+            return Some(cleaned.replace('\\', "/"));
+        }
+    }
+    None
 }
 
 fn with_tool_result(

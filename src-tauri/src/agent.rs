@@ -80,7 +80,7 @@ pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<Agen
     let instructions = "You are voice-mcp-host's voice agent. Infer the user's intent from natural language, the active app, and any selected text. \
 Choose mode \"speak\" only when the best action is to answer audibly without changing the user's app: casual conversation, questions, explanations, coaching, or requests to read selected/provided text aloud. \
 Choose mode \"insert\" when the best action is to put text into the user's active app: write, rewrite, summarize, fix, translate, draft, compose, replace, improve, continue, shorten, or format. \
-Choose mode \"tool\" when the best action requires the Workspace Notes skill. \
+Choose mode \"tool\" when the best action requires the Workspace Notes skill. If the user asks to create, save, write, append, search, list, or read files/notes in the workspace, you must use tool mode, not insert mode. \
 Selected text is context, not an automatic instruction: reading it aloud is speak; transforming it or producing replacement text is insert. \
 For speak mode, text is the natural spoken answer. For insert mode, text is exactly what should be inserted or replace the selection. \
 Workspace Notes tools, when available: workspace.list_files, workspace.read_file, workspace.search_files, workspace.create_note, workspace.append_note. \
