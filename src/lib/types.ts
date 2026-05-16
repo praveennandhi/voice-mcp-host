@@ -4,6 +4,7 @@ export interface Config {
   audio: AudioConfig;
   asr: AsrConfig;
   agent: AgentConfig;
+  workspace: WorkspaceConfig;
   insertion: InsertionConfig;
   privacy: PrivacyConfig;
 }
@@ -43,6 +44,11 @@ export interface AgentConfig {
   tts_voice: string;
 }
 
+export interface WorkspaceConfig {
+  enabled: boolean;
+  folder_path: string | null;
+}
+
 export interface InsertionConfig {
   paste_delay_ms: number;
   restore_delay_ms: number;
@@ -63,6 +69,14 @@ export interface AppStatus {
   transcriber_ready: boolean;
   recorder_state: string;
   permissions: PermissionsStatus;
+  workspace: WorkspaceStatus;
+}
+
+export interface WorkspaceStatus {
+  enabled: boolean;
+  configured: boolean;
+  folder_path: string | null;
+  exists: boolean;
 }
 
 export interface PermissionsStatus {

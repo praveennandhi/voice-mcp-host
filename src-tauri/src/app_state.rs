@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use crate::agent::AgentSessionTurn;
+use crate::agent_runtime::PendingToolCall;
 use crate::audio::AudioCapture;
 use crate::asr::Transcriber;
 use crate::config::Config;
@@ -57,6 +58,7 @@ pub struct AppState {
     pub recorder_state: Mutex<RecorderState>,
     pub overlay_state: Mutex<OverlayPayload>,
     pub agent_session: Mutex<Vec<AgentSessionTurn>>,
+    pub pending_tool_call: Mutex<Option<PendingToolCall>>,
 }
 
 impl AppState {
@@ -70,6 +72,7 @@ impl AppState {
             recorder_state: Mutex::new(RecorderState::Idle),
             overlay_state: Mutex::new(OverlayPayload::idle()),
             agent_session: Mutex::new(Vec::new()),
+            pending_tool_call: Mutex::new(None),
         }
     }
 }

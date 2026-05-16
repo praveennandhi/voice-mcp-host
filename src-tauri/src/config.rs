@@ -10,6 +10,8 @@ pub struct Config {
     pub asr: AsrConfig,
     #[serde(default = "default_agent_config")]
     pub agent: AgentConfig,
+    #[serde(default = "default_workspace_config")]
+    pub workspace: WorkspaceConfig,
     pub insertion: InsertionConfig,
     pub privacy: PrivacyConfig,
 }
@@ -66,6 +68,14 @@ pub struct AgentConfig {
     pub tts_model: String,
     #[serde(default = "default_agent_tts_voice")]
     pub tts_voice: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub folder_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,6 +150,7 @@ pub fn default_config() -> Config {
             model_cache_dir: None,
         },
         agent: default_agent_config(),
+        workspace: default_workspace_config(),
         insertion: InsertionConfig {
             paste_delay_ms: 100,
             restore_delay_ms: 500,
@@ -148,6 +159,13 @@ pub fn default_config() -> Config {
         privacy: PrivacyConfig {
             verbose_transcript_logging: false,
         },
+    }
+}
+
+fn default_workspace_config() -> WorkspaceConfig {
+    WorkspaceConfig {
+        enabled: false,
+        folder_path: None,
     }
 }
 

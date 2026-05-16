@@ -436,6 +436,36 @@ export default function SettingsPanel() {
             </>
           )}
           <div className="form-row">
+            <label>Workspace</label>
+            <label className="inline-toggle">
+              <input
+                type="checkbox"
+                checked={config.workspace.enabled}
+                onChange={e => handleConfigChange({ workspace: { ...config.workspace, enabled: e.target.checked } })}
+              />
+              <span>Enable local workspace skill</span>
+            </label>
+          </div>
+          {config.workspace.enabled && (
+            <>
+              <div className="form-row">
+                <label>Workspace folder</label>
+                <input
+                  type="text"
+                  value={config.workspace.folder_path ?? ''}
+                  onChange={e => handleConfigChange({ workspace: { ...config.workspace, folder_path: e.target.value || null } })}
+                  placeholder={IS_MACOS ? '~/Documents/voice-workspace' : 'C:\\Users\\you\\Documents\\voice-workspace'}
+                />
+              </div>
+              <div className="form-row">
+                <label>Workspace status</label>
+                <span className={`status-badge ${status.workspace.exists ? 'ok' : 'warn'}`}>
+                  {status.workspace.exists ? 'Ready' : status.workspace.configured ? 'Folder not found' : 'Choose a folder'}
+                </span>
+              </div>
+            </>
+          )}
+          <div className="form-row">
             <label>Model</label>
             {isFasterWhisper ? (
               <select

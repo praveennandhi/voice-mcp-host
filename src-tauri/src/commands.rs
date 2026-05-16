@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
-use crate::agent::{self, AgentOutputMode, AgentRequest, AgentSessionTurn};
+use crate::agent::{self, AgentOutputMode, AgentSessionTurn};
+use crate::agent_runtime;
 use crate::app_state::{AppState, OverlayPayload};
 use crate::asr::Transcriber;
 use crate::config::{self, Config};
@@ -8,6 +9,7 @@ use crate::hotkeys;
 use crate::logging;
 use crate::model_store;
 use crate::platform::{PermissionsOps, PermissionsStatus, platform};
+use crate::workspace::{self, WorkspaceStatus};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -21,6 +23,7 @@ pub struct AppStatus {
     pub transcriber_ready: bool,
     pub recorder_state: String,
     pub permissions: PermissionsStatus,
+    pub workspace: WorkspaceStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +75,7 @@ pub fn get_status(state: State<AppState>) -> AppStatus {
         transcriber_ready,
         recorder_state,
         permissions: platform().check_permissions(),
+        workspace: workspace::status(&cfg.workspace),
     }
 }
 
@@ -88,6 +92,7 @@ pub fn get_agent_session(state: State<AppState>) -> Vec<AgentSessionTurn> {
 #[tauri::command]
 pub fn clear_agent_session(state: State<AppState>) {
     state.agent_session.lock().unwrap().clear();
+    *state.pending_tool_call.lock().unwrap() = None;
 }
 
 #[tauri::command]
@@ -99,18 +104,14 @@ pub async fn send_agent_chat(app: AppHandle, message: String) -> Result<AgentCha
 
     let state = app.state::<AppState>();
     let cfg = state.config.lock().unwrap().clone();
-    let history = state.agent_session.lock().unwrap().clone();
-    let cfg_for_agent = cfg.agent.clone();
     let message_for_agent = message.clone();
+    let app_for_agent = app.clone();
+    let cfg_for_agent = cfg.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        agent::run_agent(&cfg_for_agent, AgentRequest {
-            command: &message_for_agent,
-            selected_text: None,
-            target_app: "voice-mcp-host chat",
-            history: &history,
-        })
-        .map_err(|e| e.to_string())
+        let state = app_for_agent.state::<AppState>();
+        agent_runtime::run(&state, &cfg_for_agent, &message_for_agent, None, "voice-mcp-host chat")
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -118,27 +119,12 @@ pub async fn send_agent_chat(app: AppHandle, message: String) -> Result<AgentCha
     let mode = match result.mode {
         AgentOutputMode::Insert => "insert",
         AgentOutputMode::Speak => "speak",
+        AgentOutputMode::Tool => "tool",
     }
     .to_string();
 
-    let messages = {
-        let mut session = state.agent_session.lock().unwrap();
-        session.push(AgentSessionTurn {
-            role: "user".into(),
-            content: message,
-            mode: None,
-        });
-        session.push(AgentSessionTurn {
-            role: "assistant".into(),
-            content: result.text.clone(),
-            mode: Some(mode.clone()),
-        });
-        if session.len() > 40 {
-            let remove_count = session.len() - 40;
-            session.drain(0..remove_count);
-        }
-        session.clone()
-    };
+    let state = app.state::<AppState>();
+    let messages = state.agent_session.lock().unwrap().clone();
 
     if result.mode == AgentOutputMode::Speak && cfg.agent.speak_responses {
         let agent_cfg = cfg.agent.clone();

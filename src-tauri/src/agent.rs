@@ -12,6 +12,7 @@ pub struct AgentRequest<'a> {
     pub selected_text: Option<&'a str>,
     pub target_app: &'a str,
     pub history: &'a [AgentSessionTurn],
+    pub workspace_context: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,12 +25,21 @@ pub struct AgentSessionTurn {
 pub struct AgentResult {
     pub mode: AgentOutputMode,
     pub text: String,
+    pub tool_call: Option<ToolCall>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentOutputMode {
     Insert,
     Speak,
+    Tool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub name: String,
+    #[serde(default)]
+    pub args: serde_json::Value,
 }
 
 pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<AgentResult> {
@@ -52,24 +62,30 @@ pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<Agen
 
     let selected_text = request.selected_text.unwrap_or("").trim();
     let conversation = format_history(request.history);
+    let workspace_context = request.workspace_context.unwrap_or(
+        "Workspace Notes skill is unavailable. No workspace folder is configured.",
+    );
     let context = if selected_text.is_empty() {
         format!(
-            "Recent conversation:\n{}\n\nTarget app: {}\nUser command/content:\n{}",
-            conversation, request.target_app, request.command
+            "Recent conversation:\n{}\n\nWorkspace context:\n{}\n\nTarget app: {}\nUser command/content:\n{}",
+            conversation, workspace_context, request.target_app, request.command
         )
     } else {
         format!(
-            "Recent conversation:\n{}\n\nTarget app: {}\nUser command:\n{}\n\nSelected text:\n{}",
-            conversation, request.target_app, request.command, selected_text
+            "Recent conversation:\n{}\n\nWorkspace context:\n{}\n\nTarget app: {}\nUser command:\n{}\n\nSelected text:\n{}",
+            conversation, workspace_context, request.target_app, request.command, selected_text
         )
     };
 
     let instructions = "You are voice-mcp-host's voice agent. Infer the user's intent from natural language, the active app, and any selected text. \
 Choose mode \"speak\" only when the best action is to answer audibly without changing the user's app: casual conversation, questions, explanations, coaching, or requests to read selected/provided text aloud. \
-Choose mode \"insert\" when the best action is to put text into the user's app: write, rewrite, summarize, fix, translate, draft, compose, replace, improve, continue, shorten, or format. \
+Choose mode \"insert\" when the best action is to put text into the user's active app: write, rewrite, summarize, fix, translate, draft, compose, replace, improve, continue, shorten, or format. \
+Choose mode \"tool\" when the best action requires the Workspace Notes skill. \
 Selected text is context, not an automatic instruction: reading it aloud is speak; transforming it or producing replacement text is insert. \
 For speak mode, text is the natural spoken answer. For insert mode, text is exactly what should be inserted or replace the selection. \
-Return only valid compact JSON shaped exactly like {\"mode\":\"speak\"|\"insert\",\"text\":\"...\"}. Do not include markdown fences or extra keys.";
+Workspace Notes tools, when available: workspace.list_files, workspace.read_file, workspace.search_files, workspace.create_note, workspace.append_note. \
+Use only relative paths inside the workspace. Prefer Markdown note files ending in .md. Never request delete. \
+Return only valid compact JSON. For speak/insert: {\"mode\":\"speak\"|\"insert\",\"text\":\"...\"}. For tools: {\"mode\":\"tool\",\"text\":\"why this tool is needed\",\"tool\":{\"name\":\"workspace.search_files\",\"args\":{\"query\":\"pricing\"}}}. Do not include markdown fences or extra keys.";
 
     let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
     let body = json!({
@@ -202,6 +218,7 @@ fn format_history(history: &[AgentSessionTurn]) -> String {
 struct AgentJson {
     mode: String,
     text: String,
+    tool: Option<ToolCall>,
 }
 
 fn parse_agent_result(body: &str) -> Result<AgentResult> {
@@ -216,10 +233,19 @@ fn parse_agent_result(body: &str) -> Result<AgentResult> {
     let mode = match parsed.mode.trim().to_ascii_lowercase().as_str() {
         "speak" => AgentOutputMode::Speak,
         "insert" => AgentOutputMode::Insert,
+        "tool" => AgentOutputMode::Tool,
         other => bail!("OpenAI agent returned unsupported mode: {other}"),
     };
 
-    Ok(AgentResult { mode, text })
+    if mode == AgentOutputMode::Tool && parsed.tool.is_none() {
+        bail!("OpenAI agent returned tool mode without a tool call");
+    }
+
+    Ok(AgentResult {
+        mode,
+        text,
+        tool_call: parsed.tool,
+    })
 }
 
 fn play_pcm_audio(bytes: &[u8]) -> Result<()> {

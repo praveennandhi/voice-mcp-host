@@ -2,6 +2,7 @@
 
 mod app_state;
 mod agent;
+mod agent_runtime;
 mod asr;
 mod audio;
 mod commands;
@@ -13,6 +14,7 @@ mod model_store;
 mod platform;
 mod recorder;
 mod tray;
+mod workspace;
 
 use app_state::AppState;
 use tauri::{Manager, WindowEvent};
