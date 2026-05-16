@@ -507,7 +507,7 @@ export default function SettingsPanel() {
       <div className="settings-footer">
         <span>voice-mcp-host {version} - MIT licensed</span>
         <span style={{ color: 'var(--text-muted)' }}>
-          {IS_MACOS ? 'F5 to dictate' : 'F3 to dictate'}
+          {config.dictation.primary_hotkey || (IS_MACOS ? 'F5' : 'F3')} to dictate
         </span>
       </div>
     </div>

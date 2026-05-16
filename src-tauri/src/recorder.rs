@@ -23,7 +23,8 @@ pub fn start_recording(app: AppHandle) {
         Ok(capture) => {
             *state.audio.lock().unwrap() = Some(capture);
             set_state(&app, RecorderState::Recording);
-            emit_overlay(&app, "recording", "Listening", "Press F3 again to stop", None);
+            let stop_hint = format!("Press {} again to stop", cfg.dictation.primary_hotkey);
+            emit_overlay(&app, "recording", "Listening", &stop_hint, None);
         }
         Err(e) => {
             logging::write_event("recording_start_failed", Some(serde_json::json!({ "error": e.to_string() })));
