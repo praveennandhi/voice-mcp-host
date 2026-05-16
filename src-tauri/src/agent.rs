@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::json;
-use std::path::Path;
-use std::process::Command;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use crate::config::AgentConfig;
 
@@ -95,7 +96,7 @@ pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
         "voice": config.tts_voice,
         "input": text,
         "instructions": "Natural, clear assistant voice. Keep a calm, helpful tone.",
-        "response_format": "wav",
+        "response_format": "pcm",
     });
 
     let response = reqwest::blocking::Client::builder()
@@ -115,11 +116,7 @@ pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
         bail!("OpenAI TTS returned HTTP {status}: {}", String::from_utf8_lossy(&bytes));
     }
 
-    let audio_path = std::env::temp_dir().join(format!("voice-mcp-host-tts-{}.wav", std::process::id()));
-    std::fs::write(&audio_path, &bytes).context("failed to write TTS audio file")?;
-    let play_result = play_audio_file(&audio_path);
-    let _ = std::fs::remove_file(&audio_path);
-    play_result
+    play_pcm_audio(&bytes)
 }
 
 fn parse_output_text(body: &str) -> Result<String> {
@@ -154,52 +151,139 @@ fn parse_output_text(body: &str) -> Result<String> {
     Ok(text)
 }
 
-fn play_audio_file(path: &Path) -> Result<()> {
-    #[cfg(windows)]
-    {
-        let script = format!(
-            "Add-Type -AssemblyName System; $p = New-Object System.Media.SoundPlayer '{}'; $p.PlaySync()",
-            escape_powershell_path(path)
-        );
-        let output = hidden_command("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
-            .output()
-            .context("failed to start Windows audio playback")?;
-        if output.status.success() {
-            return Ok(());
-        }
-        bail!(
-            "Windows audio playback failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+fn play_pcm_audio(bytes: &[u8]) -> Result<()> {
+    const SOURCE_SAMPLE_RATE: f64 = 24_000.0;
+
+    if bytes.len() < 2 {
+        bail!("OpenAI TTS returned empty audio");
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        let output = Command::new("afplay")
-            .arg(path)
-            .output()
-            .context("failed to start macOS audio playback")?;
-        if output.status.success() {
-            return Ok(());
-        }
-        bail!(
-            "macOS audio playback failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    let samples = bytes
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / i16::MAX as f32)
+        .collect::<Vec<_>>();
+
+    if samples.is_empty() {
+        bail!("OpenAI TTS returned no playable samples");
     }
+
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .context("no default output audio device is available")?;
+    let supported_config = device
+        .default_output_config()
+        .context("failed to get default output audio config")?;
+    let sample_format = supported_config.sample_format();
+    let config: cpal::StreamConfig = supported_config.into();
+    let channels = config.channels as usize;
+    let output_rate = config.sample_rate.0 as f64;
+    let step = SOURCE_SAMPLE_RATE / output_rate;
+    let timeout = Duration::from_secs_f64(samples.len() as f64 / SOURCE_SAMPLE_RATE + 10.0);
+    let (done_tx, done_rx) = mpsc::channel();
+
+    let err_fn = |err| eprintln!("voice-mcp-host TTS output stream error: {err}");
+    let stream = match sample_format {
+        cpal::SampleFormat::F32 => {
+            let mut state = PlaybackState::new(samples, channels, step, done_tx);
+            device.build_output_stream(
+                &config,
+                move |data: &mut [f32], _| state.fill_f32(data),
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::I16 => {
+            let mut state = PlaybackState::new(samples, channels, step, done_tx);
+            device.build_output_stream(
+                &config,
+                move |data: &mut [i16], _| state.fill_i16(data),
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::U16 => {
+            let mut state = PlaybackState::new(samples, channels, step, done_tx);
+            device.build_output_stream(
+                &config,
+                move |data: &mut [u16], _| state.fill_u16(data),
+                err_fn,
+                None,
+            )
+        }
+        other => bail!("unsupported output audio sample format: {other:?}"),
+    }
+    .context("failed to build TTS output stream")?;
+
+    stream.play().context("failed to start TTS output stream")?;
+    done_rx
+        .recv_timeout(timeout)
+        .context("timed out while playing TTS audio")?;
+    Ok(())
 }
 
-#[cfg(windows)]
-fn escape_powershell_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\'', "''")
+struct PlaybackState {
+    samples: Vec<f32>,
+    channels: usize,
+    pos: f64,
+    step: f64,
+    sent_done: bool,
+    done_tx: mpsc::Sender<()>,
 }
 
-#[cfg(windows)]
-fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = Command::new(program);
-    command.creation_flags(CREATE_NO_WINDOW);
-    command
+impl PlaybackState {
+    fn new(samples: Vec<f32>, channels: usize, step: f64, done_tx: mpsc::Sender<()>) -> Self {
+        Self {
+            samples,
+            channels,
+            pos: 0.0,
+            step,
+            sent_done: false,
+            done_tx,
+        }
+    }
+
+    fn next_sample(&mut self) -> f32 {
+        let idx = self.pos.floor() as usize;
+        if idx >= self.samples.len() {
+            if !self.sent_done {
+                let _ = self.done_tx.send(());
+                self.sent_done = true;
+            }
+            return 0.0;
+        }
+
+        let next_idx = (idx + 1).min(self.samples.len() - 1);
+        let frac = (self.pos - idx as f64) as f32;
+        let sample = self.samples[idx] + (self.samples[next_idx] - self.samples[idx]) * frac;
+        self.pos += self.step;
+        sample.clamp(-1.0, 1.0)
+    }
+
+    fn fill_f32(&mut self, data: &mut [f32]) {
+        for frame in data.chunks_mut(self.channels) {
+            let sample = self.next_sample();
+            for channel in frame {
+                *channel = sample;
+            }
+        }
+    }
+
+    fn fill_i16(&mut self, data: &mut [i16]) {
+        for frame in data.chunks_mut(self.channels) {
+            let sample = (self.next_sample() * i16::MAX as f32) as i16;
+            for channel in frame {
+                *channel = sample;
+            }
+        }
+    }
+
+    fn fill_u16(&mut self, data: &mut [u16]) {
+        for frame in data.chunks_mut(self.channels) {
+            let sample = ((self.next_sample() + 1.0) * 0.5 * u16::MAX as f32) as u16;
+            for channel in frame {
+                *channel = sample;
+            }
+        }
+    }
 }
