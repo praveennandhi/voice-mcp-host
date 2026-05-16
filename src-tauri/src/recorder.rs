@@ -119,15 +119,12 @@ pub fn stop_and_transcribe(app: AppHandle) {
                 }
 
                 let selected_text = state.selected_text.lock().unwrap().take();
-                let agent_command = parse_agent_command(&text, &cfg.agent.trigger_word).or_else(|| {
-                    if state.pending_tool_call.lock().unwrap().is_some()
-                        && is_pending_confirmation_response(&text)
-                    {
-                        Some(text.trim().to_string())
-                    } else {
-                        None
-                    }
-                });
+                let has_pending_confirmation = state.pending_tool_call.lock().unwrap().is_some();
+                let agent_command = if has_pending_confirmation {
+                    Some(text.trim().to_string())
+                } else {
+                    parse_agent_command(&text, &cfg.agent.trigger_word)
+                };
                 let mut should_speak = false;
                 let output_text = if let Some(command) = agent_command {
                     set_state(&app_clone, RecorderState::Transcribing);
@@ -338,13 +335,6 @@ fn parse_agent_command(text: &str, trigger_word: &str) -> Option<String> {
         .trim()
         .to_string();
     Some(rest)
-}
-
-fn is_pending_confirmation_response(text: &str) -> bool {
-    matches!(
-        text.trim().to_ascii_lowercase().as_str(),
-        "yes" | "yeah" | "yep" | "confirm" | "do it" | "go ahead" | "no" | "nope" | "cancel"
-    )
 }
 
 fn focus_settle_delay_ms() -> u64 {
