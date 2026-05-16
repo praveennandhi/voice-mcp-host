@@ -144,9 +144,29 @@ pub fn mode_label(mode: AgentOutputMode) -> &'static str {
 }
 
 fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Result<Option<AgentResult>> {
-    let answer = command.trim().to_ascii_lowercase();
-    if !matches!(answer.as_str(), "yes" | "yeah" | "yep" | "confirm" | "do it" | "go ahead" | "no" | "nope" | "cancel") {
+    if state.pending_tool_call.lock().unwrap().is_none() {
         return Ok(None);
+    }
+
+    let answer = normalize_confirmation(command);
+    if answer.is_empty() {
+        let text = "Please say yes to confirm, or no to cancel.".to_string();
+        append_turns(state, command, &text, "confirm");
+        return Ok(Some(AgentResult {
+            mode: AgentOutputMode::Speak,
+            text,
+            tool_call: None,
+        }));
+    }
+
+    if !is_confirmation_answer(&answer) {
+        let text = "Please say yes to confirm, or no to cancel.".to_string();
+        append_turns(state, command, &text, "confirm");
+        return Ok(Some(AgentResult {
+            mode: AgentOutputMode::Speak,
+            text,
+            tool_call: None,
+        }));
     }
 
     let pending = state.pending_tool_call.lock().unwrap().take();
@@ -154,7 +174,7 @@ fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Resul
         return Ok(None);
     };
 
-    if matches!(answer.as_str(), "no" | "nope" | "cancel") {
+    if is_negative_confirmation(&answer) {
         let text = "Cancelled.".to_string();
         append_turns(state, command, &text, "speak");
         return Ok(Some(AgentResult {
@@ -172,6 +192,49 @@ fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Resul
         text,
         tool_call: None,
     }))
+}
+
+fn normalize_confirmation(command: &str) -> String {
+    let text = command
+        .trim()
+        .to_ascii_lowercase()
+        .trim_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace())
+        .to_string();
+
+    let mut words = text
+        .split(|c: char| c.is_ascii_punctuation() || c.is_whitespace())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if let Some(rest) = words.strip_prefix("agent ") {
+        words = rest.trim().to_string();
+    } else if words == "agent" {
+        words.clear();
+    }
+
+    words
+}
+
+fn is_confirmation_answer(answer: &str) -> bool {
+    matches!(
+        answer,
+        "yes"
+            | "yes please"
+            | "yeah"
+            | "yep"
+            | "confirm"
+            | "do it"
+            | "go ahead"
+            | "please do it"
+            | "no"
+            | "nope"
+            | "cancel"
+    )
+}
+
+fn is_negative_confirmation(answer: &str) -> bool {
+    matches!(answer, "no" | "nope" | "cancel")
 }
 
 fn confirmation_text(tool: &ToolCall) -> String {
