@@ -8,6 +8,8 @@ pub struct Config {
     pub dictation: DictationConfig,
     pub audio: AudioConfig,
     pub asr: AsrConfig,
+    #[serde(default = "default_agent_config")]
+    pub agent: AgentConfig,
     pub insertion: InsertionConfig,
     pub privacy: PrivacyConfig,
 }
@@ -40,6 +42,17 @@ pub struct AsrConfig {
     #[serde(default)]
     pub faster_whisper_python_path: Option<String>,
     pub model_cache_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConfig {
+    pub enabled: bool,
+    pub trigger_word: String,
+    pub provider: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub base_url: String,
+    pub auto_replace_selection: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +126,7 @@ pub fn default_config() -> Config {
             faster_whisper_python_path: None,
             model_cache_dir: None,
         },
+        agent: default_agent_config(),
         insertion: InsertionConfig {
             paste_delay_ms: 100,
             restore_delay_ms: 500,
@@ -121,6 +135,18 @@ pub fn default_config() -> Config {
         privacy: PrivacyConfig {
             verbose_transcript_logging: false,
         },
+    }
+}
+
+fn default_agent_config() -> AgentConfig {
+    AgentConfig {
+        enabled: false,
+        trigger_word: "agent".into(),
+        provider: "openai".into(),
+        model: "gpt-5.2".into(),
+        api_key: None,
+        base_url: "https://api.openai.com/v1".into(),
+        auto_replace_selection: true,
     }
 }
 

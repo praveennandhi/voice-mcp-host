@@ -86,6 +86,7 @@ button:disabled {
 }
 
 input[type="text"],
+input[type="password"],
 input[type="number"],
 select {
   background: var(--bg2);
@@ -100,6 +101,7 @@ select {
 }
 
 input[type="text"]:focus,
+input[type="password"]:focus,
 input[type="number"]:focus,
 select:focus {
   border-color: var(--accent);
@@ -167,6 +169,17 @@ select:focus {
 .form-row select {
   width: 100%;
   max-width: 300px;
+}
+
+.inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.inline-toggle input {
+  width: auto;
 }
 
 .section {

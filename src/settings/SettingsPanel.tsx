@@ -311,6 +311,48 @@ export default function SettingsPanel() {
             </select>
           </div>
           <div className="form-row">
+            <label>Agent mode</label>
+            <label className="inline-toggle">
+              <input
+                type="checkbox"
+                checked={config.agent.enabled}
+                onChange={e => handleConfigChange({ agent: { ...config.agent, enabled: e.target.checked } })}
+              />
+              <span>OpenAI agent enabled</span>
+            </label>
+          </div>
+          {config.agent.enabled && (
+            <>
+              <div className="form-row">
+                <label>Trigger word</label>
+                <input
+                  type="text"
+                  value={config.agent.trigger_word}
+                  onChange={e => handleConfigChange({ agent: { ...config.agent, trigger_word: e.target.value } })}
+                  style={{ maxWidth: 120 }}
+                />
+              </div>
+              <div className="form-row">
+                <label>OpenAI model</label>
+                <input
+                  type="text"
+                  value={config.agent.model}
+                  onChange={e => handleConfigChange({ agent: { ...config.agent, model: e.target.value } })}
+                  style={{ maxWidth: 220 }}
+                />
+              </div>
+              <div className="form-row">
+                <label>OpenAI API key</label>
+                <input
+                  type="password"
+                  value={config.agent.api_key ?? ''}
+                  onChange={e => handleConfigChange({ agent: { ...config.agent, api_key: e.target.value || null } })}
+                  placeholder="sk-..."
+                />
+              </div>
+            </>
+          )}
+          <div className="form-row">
             <label>Model</label>
             {isFasterWhisper ? (
               <select

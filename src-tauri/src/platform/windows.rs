@@ -6,6 +6,7 @@ use super::{ClipboardOps, PermissionState, PermissionsOps, PermissionsStatus, Ta
 
 const KEYEVENTF_KEYUP: u32 = 0x0002;
 const VK_CONTROL: u8 = 0x11;
+const VK_C: u8 = 0x43;
 const VK_V: u8 = 0x56;
 
 pub struct WindowsPlatform;
@@ -27,8 +28,12 @@ impl ClipboardOps for WindowsPlatform {
         set_clipboard_text(text)
     }
 
+    fn send_copy_shortcut(&self) -> Result<(), String> {
+        send_ctrl_key(VK_C)
+    }
+
     fn send_paste_shortcut(&self) -> Result<(), String> {
-        send_ctrl_v()
+        send_ctrl_key(VK_V)
     }
 }
 
@@ -138,12 +143,12 @@ fn set_clipboard_text(text: &str) -> Result<(), String> {
     }
 }
 
-fn send_ctrl_v() -> Result<(), String> {
+fn send_ctrl_key(key: u8) -> Result<(), String> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::keybd_event;
     unsafe {
         keybd_event(VK_CONTROL, 0, 0, 0);
-        keybd_event(VK_V, 0, 0, 0);
-        keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(key, 0, 0, 0);
+        keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
         keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
     }
     Ok(())

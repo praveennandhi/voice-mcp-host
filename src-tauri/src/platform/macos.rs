@@ -15,12 +15,20 @@ impl MacosPlatform {
 // ── ClipboardOps ──────────────────────────────────────────────────────────────
 
 impl ClipboardOps for MacosPlatform {
+    fn get_text(&self) -> Result<String, String> {
+        get_pasteboard_text()
+    }
+
     fn set_text(&self, text: &str) -> Result<(), String> {
         set_pasteboard_text(text)
     }
 
+    fn send_copy_shortcut(&self) -> Result<(), String> {
+        send_cmd_key(8)
+    }
+
     fn send_paste_shortcut(&self) -> Result<(), String> {
-        send_cmd_v()
+        send_cmd_key(9)
     }
 }
 
@@ -56,6 +64,19 @@ impl PermissionsOps for MacosPlatform {
 
 // ── macOS clipboard implementation ────────────────────────────────────────────
 
+fn get_pasteboard_text() -> Result<String, String> {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard();
+        let ns_type = NSPasteboardTypeString;
+        match pb.stringForType(ns_type) {
+            Some(s) => Ok(s.to_string()),
+            None => Ok(String::new()),
+        }
+    }
+}
+
 fn set_pasteboard_text(text: &str) -> Result<(), String> {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
     use objc2_foundation::NSString;
@@ -75,12 +96,9 @@ fn set_pasteboard_text(text: &str) -> Result<(), String> {
 
 // ── macOS synthetic Cmd+V ─────────────────────────────────────────────────────
 
-fn send_cmd_v() -> Result<(), String> {
+fn send_cmd_key(key_code: core_graphics::event::CGKeyCode) -> Result<(), String> {
     use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-
-    // ANSI key code for 'V'
-    const KEY_V: CGKeyCode = 9;
 
     if !unsafe { accessibility_sys::AXIsProcessTrusted() } {
         return Err("Accessibility permission is not granted for voice-mcp-host".into());
@@ -89,14 +107,15 @@ fn send_cmd_v() -> Result<(), String> {
     let src = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "CGEventSource::new failed")?;
 
-    let down = CGEvent::new_keyboard_event(src.clone(), KEY_V, true)
+    let key: CGKeyCode = key_code;
+    let down = CGEvent::new_keyboard_event(src.clone(), key, true)
         .map_err(|_| "CGEvent key-down failed")?;
     down.set_flags(CGEventFlags::CGEventFlagCommand);
     down.post(CGEventTapLocation::HID);
 
     std::thread::sleep(std::time::Duration::from_millis(30));
 
-    let up = CGEvent::new_keyboard_event(src, KEY_V, false)
+    let up = CGEvent::new_keyboard_event(src, key, false)
         .map_err(|_| "CGEvent key-up failed")?;
     up.set_flags(CGEventFlags::CGEventFlagCommand);
     up.post(CGEventTapLocation::HID);

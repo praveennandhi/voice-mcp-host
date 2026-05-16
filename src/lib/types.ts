@@ -3,6 +3,7 @@ export interface Config {
   dictation: DictationConfig;
   audio: AudioConfig;
   asr: AsrConfig;
+  agent: AgentConfig;
   insertion: InsertionConfig;
   privacy: PrivacyConfig;
 }
@@ -27,6 +28,16 @@ export interface AsrConfig {
   faster_whisper_compute_type: string;
   faster_whisper_python_path: string | null;
   model_cache_dir: string | null;
+}
+
+export interface AgentConfig {
+  enabled: boolean;
+  trigger_word: string;
+  provider: string;
+  model: string;
+  api_key: string | null;
+  base_url: string;
+  auto_replace_selection: boolean;
 }
 
 export interface InsertionConfig {

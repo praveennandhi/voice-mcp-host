@@ -1,10 +1,11 @@
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::app_state::{AppState, OverlayPayload, RecorderState};
+use crate::agent::{self, AgentRequest};
 use crate::audio::AudioCapture;
 use crate::insertion;
 use crate::logging;
-use crate::platform::{WindowTargetOps, platform};
+use crate::platform::{ClipboardOps, WindowTargetOps, platform};
 
 pub fn start_recording(app: AppHandle) {
     let state = app.state::<AppState>();
@@ -13,6 +14,7 @@ pub fn start_recording(app: AppHandle) {
     // Capture focus BEFORE recording — overlay must not steal focus.
     let target = platform().capture_foreground();
     *state.target_window.lock().unwrap() = Some(target.clone());
+    *state.selected_text.lock().unwrap() = capture_selected_text().ok().flatten();
 
     logging::write_event("recording_started", Some(target.context_json()));
 
@@ -111,6 +113,43 @@ pub fn stop_and_transcribe(app: AppHandle) {
                     return;
                 }
 
+                let selected_text = state.selected_text.lock().unwrap().take();
+                let agent_command = parse_agent_command(&text, &cfg.agent.trigger_word);
+                let output_text = if let Some(command) = agent_command {
+                    set_state(&app_clone, RecorderState::Transcribing);
+                    emit_overlay(&app_clone, "transcribing", "Thinking", "Asking agent", None);
+                    logging::write_event("agent_started", Some(serde_json::json!({
+                        "command_chars": command.len(),
+                        "selected_chars": selected_text.as_ref().map(|s| s.len()).unwrap_or(0),
+                        "target": target.as_ref().map(|t| t.context_json()),
+                    })));
+                    match agent::run_agent(&cfg.agent, AgentRequest {
+                        command: &command,
+                        selected_text: selected_text.as_deref(),
+                        target_app: target
+                            .as_ref()
+                            .map(|t| t.process_name.as_str())
+                            .unwrap_or("unknown"),
+                    }) {
+                        Ok(reply) => {
+                            logging::write_event("agent_completed", Some(serde_json::json!({
+                                "chars": reply.len(),
+                            })));
+                            reply
+                        }
+                        Err(e) => {
+                            logging::write_event("agent_failed", Some(serde_json::json!({
+                                "error": e.to_string(),
+                            })));
+                            set_state(&app_clone, RecorderState::Error(e.to_string()));
+                            emit_overlay(&app_clone, "error", "Agent failed", &e.to_string(), Some(7000));
+                            return;
+                        }
+                    }
+                } else {
+                    text
+                };
+
                 set_state(&app_clone, RecorderState::Pasting);
                 emit_overlay(&app_clone, "pasting", "Inserting", "Sending text to your app", None);
 
@@ -128,7 +167,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
 
                 let fallback_path = config_dir_fallback();
                 let report = insertion::paste_text(
-                    &text,
+                    &output_text,
                     cfg.insertion.paste_delay_ms,
                     cfg.insertion.restore_delay_ms,
                     fallback_path.as_ref(),
@@ -203,6 +242,48 @@ fn emit_overlay(app: &AppHandle, state: &str, title: &str, subtitle: &str, hide_
             }
         });
     }
+}
+
+fn capture_selected_text() -> Result<Option<String>, String> {
+    let p = platform();
+    let original = p.get_text().unwrap_or_default();
+    let sentinel = format!("__voice_mcp_host_selection_{}__", std::process::id());
+    p.set_text(&sentinel)?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    p.send_copy_shortcut()?;
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let copied = p.get_text().unwrap_or_default();
+    let _ = p.set_text(&original);
+
+    let trimmed = copied.trim();
+    if trimmed.is_empty() || copied == sentinel {
+        Ok(None)
+    } else {
+        Ok(Some(copied))
+    }
+}
+
+fn parse_agent_command(text: &str, trigger_word: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let trigger = trigger_word.trim();
+    if trigger.is_empty() {
+        return None;
+    }
+
+    let lower = trimmed.to_lowercase();
+    let trigger_lower = trigger.to_lowercase();
+    if lower == trigger_lower {
+        return Some(String::new());
+    }
+    if !lower.starts_with(&trigger_lower) {
+        return None;
+    }
+
+    let rest = trimmed[trigger.len()..]
+        .trim_start_matches(|c: char| c.is_whitespace() || c == ',' || c == ':' || c == '-' || c == '.')
+        .trim()
+        .to_string();
+    Some(rest)
 }
 
 fn focus_settle_delay_ms() -> u64 {
