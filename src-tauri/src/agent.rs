@@ -224,7 +224,7 @@ struct AgentJson {
 
 fn parse_agent_result(body: &str) -> Result<AgentResult> {
     let output = parse_output_text(body)?;
-    let parsed = serde_json::from_str::<AgentJson>(output.trim())
+    let parsed = parse_agent_json(&output)
         .with_context(|| format!("OpenAI agent output was not valid JSON: {output}"))?;
     let text = parsed.text.trim().to_string();
     if text.is_empty() {
@@ -247,6 +247,65 @@ fn parse_agent_result(body: &str) -> Result<AgentResult> {
         text,
         tool_call: parsed.tool,
     })
+}
+
+fn parse_agent_json(output: &str) -> Result<AgentJson> {
+    let trimmed = output.trim();
+    if let Ok(parsed) = serde_json::from_str::<AgentJson>(trimmed) {
+        return Ok(parsed);
+    }
+
+    let candidate = extract_json_object(trimmed).unwrap_or_else(|| trimmed.to_string());
+    if let Ok(parsed) = serde_json::from_str::<AgentJson>(&candidate) {
+        return Ok(parsed);
+    }
+
+    let repaired = balance_json_braces(&candidate);
+    serde_json::from_str::<AgentJson>(&repaired).context("repaired agent JSON still did not parse")
+}
+
+fn extract_json_object(text: &str) -> Option<String> {
+    let start = text.find('{')?;
+    let end = text.rfind('}').unwrap_or(text.len().saturating_sub(1));
+    if end < start {
+        return None;
+    }
+    Some(text[start..=end].to_string())
+}
+
+fn balance_json_braces(text: &str) -> String {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut balance = 0i32;
+
+    for ch in text.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        if ch == '{' {
+            balance += 1;
+        } else if ch == '}' {
+            balance -= 1;
+        }
+    }
+
+    let mut repaired = text.trim().to_string();
+    for _ in 0..balance.max(0) {
+        repaired.push('}');
+    }
+    repaired
 }
 
 fn play_pcm_audio(bytes: &[u8]) -> Result<()> {
