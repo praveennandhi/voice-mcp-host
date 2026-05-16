@@ -1,7 +1,7 @@
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::app_state::{AppState, OverlayPayload, RecorderState};
-use crate::agent::{self, AgentOutputMode, AgentRequest};
+use crate::agent::{self, AgentOutputMode, AgentRequest, AgentSessionTurn};
 use crate::audio::AudioCapture;
 use crate::insertion;
 use crate::logging;
@@ -121,6 +121,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
                 let agent_command = parse_agent_command(&text, &cfg.agent.trigger_word);
                 let mut should_speak = false;
                 let output_text = if let Some(command) = agent_command {
+                    let history = state.agent_session.lock().unwrap().clone();
                     set_state(&app_clone, RecorderState::Transcribing);
                     emit_overlay(&app_clone, "transcribing", "Thinking", "Asking agent", None);
                     logging::write_event("agent_started", Some(serde_json::json!({
@@ -135,6 +136,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
                             .as_ref()
                             .map(|t| t.process_name.as_str())
                             .unwrap_or("unknown"),
+                        history: &history,
                     }) {
                         Ok(result) => {
                             logging::write_event("agent_completed", Some(serde_json::json!({
@@ -147,6 +149,15 @@ pub fn stop_and_transcribe(app: AppHandle) {
                             if result.mode == AgentOutputMode::Speak {
                                 should_speak = true;
                             }
+                            append_agent_turns(
+                                &state,
+                                &command,
+                                &result.text,
+                                match result.mode {
+                                    AgentOutputMode::Insert => "insert",
+                                    AgentOutputMode::Speak => "speak",
+                                },
+                            );
                             result.text
                         }
                         Err(e) => {
@@ -227,6 +238,24 @@ pub fn stop_and_transcribe(app: AppHandle) {
             }
         }
     });
+}
+
+fn append_agent_turns(state: &AppState, user: &str, assistant: &str, mode: &str) {
+    let mut session = state.agent_session.lock().unwrap();
+    session.push(AgentSessionTurn {
+        role: "user".into(),
+        content: user.trim().to_string(),
+        mode: None,
+    });
+    session.push(AgentSessionTurn {
+        role: "assistant".into(),
+        content: assistant.trim().to_string(),
+        mode: Some(mode.into()),
+    });
+    if session.len() > 40 {
+        let remove_count = session.len() - 40;
+        session.drain(0..remove_count);
+    }
 }
 
 fn set_state(app: &AppHandle, s: RecorderState) {

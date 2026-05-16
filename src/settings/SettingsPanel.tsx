@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { api } from '../lib/api';
-import type { AppStatus, AvailableModel, Config, DownloadProgress } from '../lib/types';
+import type { AgentSessionTurn, AppStatus, AvailableModel, Config, DownloadProgress } from '../lib/types';
 
 const IS_MACOS = navigator.userAgent.includes('Macintosh');
 const FASTER_WHISPER_MODELS = [
@@ -68,20 +68,26 @@ export default function SettingsPanel() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [engineFallback, setEngineFallback] = useState<string | null>(null);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [agentMessages, setAgentMessages] = useState<AgentSessionTurn[]>([]);
+  const [agentInput, setAgentInput] = useState('');
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentError, setAgentError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [cfg, st, devs, mods, ver] = await Promise.all([
+    const [cfg, st, devs, mods, ver, session] = await Promise.all([
       api.getConfig(),
       api.getStatus(),
       api.listAudioDevices(),
       api.listModels(),
       api.getVersion(),
+      api.getAgentSession(),
     ]);
     setConfig(cfg);
     setStatus(st);
     setDevices(devs);
     setModels(mods);
     setVersion(ver);
+    setAgentMessages(session);
   }, []);
 
   useEffect(() => {
@@ -100,6 +106,15 @@ export default function SettingsPanel() {
       unlistenFallback.then(fn => fn());
     };
   }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      api.getAgentSession()
+        .then(setAgentMessages)
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleConfigChange = (patch: Partial<Config>) => {
     if (!config) return;
@@ -143,6 +158,38 @@ export default function SettingsPanel() {
     await api.requestAccessibilityPermission();
     const perms = await api.checkPermissions();
     setStatus(s => s ? { ...s, permissions: perms } : s);
+  };
+
+  const handleAgentSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = agentInput.trim();
+    if (!message || agentBusy) return;
+
+    setAgentBusy(true);
+    setAgentError(null);
+    setAgentInput('');
+    setAgentMessages(current => [
+      ...current,
+      { role: 'user', content: message, mode: null },
+    ]);
+
+    try {
+      const response = await api.sendAgentChat(message);
+      setAgentMessages(response.messages);
+    } catch (e) {
+      setAgentError(String(e));
+      setAgentMessages(current => current.filter((turn, index) => (
+        index !== current.length - 1 || turn.role !== 'user' || turn.content !== message
+      )));
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const handleClearAgentSession = async () => {
+    await api.clearAgentSession();
+    setAgentMessages([]);
+    setAgentError(null);
   };
 
   if (!config || !status) {
@@ -506,6 +553,53 @@ export default function SettingsPanel() {
             />
           </div>
         </div>
+
+        {config.agent.enabled && (
+          <div className="section agent-chat-section">
+            <div className="section-heading-row">
+              <div>
+                <div className="section-title">Agent</div>
+                <p className="muted-copy">
+                  Voice and typed messages share this session until you clear it or quit.
+                </p>
+              </div>
+              <button onClick={handleClearAgentSession} disabled={agentBusy || agentMessages.length === 0}>
+                Clear
+              </button>
+            </div>
+
+            <div className="agent-chat-log">
+              {agentMessages.length === 0 ? (
+                <div className="agent-chat-empty">No conversation yet.</div>
+              ) : (
+                agentMessages.map((turn, index) => (
+                  <div key={`${turn.role}-${index}`} className={`agent-message agent-message--${turn.role}`}>
+                    <div className="agent-message-meta">
+                      <span>{turn.role === 'assistant' ? 'Agent' : 'You'}</span>
+                      {turn.mode && <span>{turn.mode === 'speak' ? 'spoken' : 'inserted'}</span>}
+                    </div>
+                    <div className="agent-message-body">{turn.content}</div>
+                  </div>
+                ))
+              )}
+              {agentBusy && <div className="agent-chat-empty">Thinking...</div>}
+            </div>
+
+            <form className="agent-chat-form" onSubmit={handleAgentSubmit}>
+              <textarea
+                value={agentInput}
+                onChange={e => setAgentInput(e.target.value)}
+                placeholder="Ask the agent, or test how a voice command would feel..."
+                disabled={agentBusy}
+                rows={3}
+              />
+              <button className="primary" type="submit" disabled={agentBusy || !agentInput.trim()}>
+                Send
+              </button>
+            </form>
+            {agentError && <p className="inline-error">Agent error: {agentError}</p>}
+          </div>
+        )}
 
         <button className="advanced-toggle" onClick={() => setShowAdvanced(v => !v)}>
           {showAdvanced ? 'v' : '>'} Advanced

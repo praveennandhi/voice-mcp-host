@@ -28,6 +28,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::get_overlay_state,
+            commands::get_agent_session,
+            commands::clear_agent_session,
+            commands::send_agent_chat,
             commands::start_overlay_drag,
             commands::save_config,
             commands::get_status,

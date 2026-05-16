@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use crate::agent::AgentSessionTurn;
 use crate::audio::AudioCapture;
 use crate::asr::Transcriber;
 use crate::config::Config;
@@ -55,6 +56,7 @@ pub struct AppState {
     pub config: Mutex<Config>,
     pub recorder_state: Mutex<RecorderState>,
     pub overlay_state: Mutex<OverlayPayload>,
+    pub agent_session: Mutex<Vec<AgentSessionTurn>>,
 }
 
 impl AppState {
@@ -67,6 +69,7 @@ impl AppState {
             config: Mutex::new(config),
             recorder_state: Mutex::new(RecorderState::Idle),
             overlay_state: Mutex::new(OverlayPayload::idle()),
+            agent_session: Mutex::new(Vec::new()),
         }
     }
 }

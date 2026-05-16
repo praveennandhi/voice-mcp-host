@@ -94,3 +94,15 @@ export interface OverlayState {
   subtitle: string;
   hide_after_ms?: number;
 }
+
+export interface AgentSessionTurn {
+  role: 'user' | 'assistant' | string;
+  content: string;
+  mode: 'speak' | 'insert' | string | null;
+}
+
+export interface AgentChatResponse {
+  messages: AgentSessionTurn[];
+  mode: 'speak' | 'insert' | string;
+  text: string;
+}

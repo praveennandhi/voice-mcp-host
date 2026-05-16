@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -11,6 +11,14 @@ pub struct AgentRequest<'a> {
     pub command: &'a str,
     pub selected_text: Option<&'a str>,
     pub target_app: &'a str,
+    pub history: &'a [AgentSessionTurn],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSessionTurn {
+    pub role: String,
+    pub content: String,
+    pub mode: Option<String>,
 }
 
 pub struct AgentResult {
@@ -43,15 +51,16 @@ pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<Agen
         .context("OpenAI API key is missing. Add it in Settings.")?;
 
     let selected_text = request.selected_text.unwrap_or("").trim();
+    let conversation = format_history(request.history);
     let context = if selected_text.is_empty() {
         format!(
-            "Target app: {}\nUser command/content:\n{}",
-            request.target_app, request.command
+            "Recent conversation:\n{}\n\nTarget app: {}\nUser command/content:\n{}",
+            conversation, request.target_app, request.command
         )
     } else {
         format!(
-            "Target app: {}\nUser command:\n{}\n\nSelected text:\n{}",
-            request.target_app, request.command, selected_text
+            "Recent conversation:\n{}\n\nTarget app: {}\nUser command:\n{}\n\nSelected text:\n{}",
+            conversation, request.target_app, request.command, selected_text
         )
     };
 
@@ -162,6 +171,31 @@ fn parse_output_text(body: &str) -> Result<String> {
         bail!("OpenAI response did not include output text");
     }
     Ok(text)
+}
+
+fn format_history(history: &[AgentSessionTurn]) -> String {
+    let turns = history
+        .iter()
+        .rev()
+        .take(12)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|turn| {
+            let mode = turn
+                .mode
+                .as_deref()
+                .map(|m| format!(" ({m})"))
+                .unwrap_or_default();
+            format!("{}{}: {}", turn.role, mode, turn.content)
+        })
+        .collect::<Vec<_>>();
+
+    if turns.is_empty() {
+        "No prior turns in this session.".into()
+    } else {
+        turns.join("\n")
+    }
 }
 
 #[derive(Deserialize)]

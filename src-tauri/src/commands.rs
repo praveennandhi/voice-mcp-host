@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
+use crate::agent::{self, AgentOutputMode, AgentRequest, AgentSessionTurn};
 use crate::app_state::{AppState, OverlayPayload};
 use crate::asr::Transcriber;
 use crate::config::{self, Config};
@@ -7,7 +8,7 @@ use crate::hotkeys;
 use crate::logging;
 use crate::model_store;
 use crate::platform::{PermissionsOps, PermissionsStatus, platform};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 pub struct AppStatus {
@@ -20,6 +21,13 @@ pub struct AppStatus {
     pub transcriber_ready: bool,
     pub recorder_state: String,
     pub permissions: PermissionsStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentChatResponse {
+    pub messages: Vec<AgentSessionTurn>,
+    pub mode: String,
+    pub text: String,
 }
 
 #[tauri::command]
@@ -70,6 +78,96 @@ pub fn get_status(state: State<AppState>) -> AppStatus {
 #[tauri::command]
 pub fn get_overlay_state(state: State<AppState>) -> OverlayPayload {
     state.overlay_state.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn get_agent_session(state: State<AppState>) -> Vec<AgentSessionTurn> {
+    state.agent_session.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn clear_agent_session(state: State<AppState>) {
+    state.agent_session.lock().unwrap().clear();
+}
+
+#[tauri::command]
+pub async fn send_agent_chat(app: AppHandle, message: String) -> Result<AgentChatResponse, String> {
+    let message = message.trim().to_string();
+    if message.is_empty() {
+        return Err("Message is empty".into());
+    }
+
+    let state = app.state::<AppState>();
+    let cfg = state.config.lock().unwrap().clone();
+    let history = state.agent_session.lock().unwrap().clone();
+    let cfg_for_agent = cfg.agent.clone();
+    let message_for_agent = message.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        agent::run_agent(&cfg_for_agent, AgentRequest {
+            command: &message_for_agent,
+            selected_text: None,
+            target_app: "voice-mcp-host chat",
+            history: &history,
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let mode = match result.mode {
+        AgentOutputMode::Insert => "insert",
+        AgentOutputMode::Speak => "speak",
+    }
+    .to_string();
+
+    let messages = {
+        let mut session = state.agent_session.lock().unwrap();
+        session.push(AgentSessionTurn {
+            role: "user".into(),
+            content: message,
+            mode: None,
+        });
+        session.push(AgentSessionTurn {
+            role: "assistant".into(),
+            content: result.text.clone(),
+            mode: Some(mode.clone()),
+        });
+        if session.len() > 40 {
+            let remove_count = session.len() - 40;
+            session.drain(0..remove_count);
+        }
+        session.clone()
+    };
+
+    if result.mode == AgentOutputMode::Speak && cfg.agent.speak_responses {
+        let agent_cfg = cfg.agent.clone();
+        let spoken_text = result.text.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = agent::speak_response(&agent_cfg, &spoken_text) {
+                logging::write_event("agent_tts_failed", Some(serde_json::json!({
+                    "error": e.to_string(),
+                    "source": "chat",
+                })));
+            } else {
+                logging::write_event("agent_tts_completed", Some(serde_json::json!({
+                    "chars": spoken_text.len(),
+                    "source": "chat",
+                })));
+            }
+        });
+    }
+
+    logging::write_event("agent_chat_completed", Some(serde_json::json!({
+        "mode": mode,
+        "chars": result.text.len(),
+    })));
+
+    Ok(AgentChatResponse {
+        messages,
+        mode,
+        text: result.text,
+    })
 }
 
 #[tauri::command]

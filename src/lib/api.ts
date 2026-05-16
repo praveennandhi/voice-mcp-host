@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppStatus, AvailableModel, Config, PermissionsStatus } from './types';
+import type { AgentChatResponse, AgentSessionTurn, AppStatus, AvailableModel, Config, PermissionsStatus } from './types';
 
 export const api = {
   getConfig: () => invoke<Config>('get_config'),
@@ -12,6 +12,9 @@ export const api = {
   checkPermissions: () => invoke<PermissionsStatus>('check_permissions'),
   requestAccessibilityPermission: () => invoke<boolean>('request_accessibility_permission'),
   openLogDir: () => invoke<void>('open_log_dir'),
+  getAgentSession: () => invoke<AgentSessionTurn[]>('get_agent_session'),
+  clearAgentSession: () => invoke<void>('clear_agent_session'),
+  sendAgentChat: (message: string) => invoke<AgentChatResponse>('send_agent_chat', { message }),
   getVersion: () => invoke<string>('get_version'),
   quitApp: () => invoke<void>('quit_app'),
 };
