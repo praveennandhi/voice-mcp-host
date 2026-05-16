@@ -15,10 +15,6 @@ impl MacosPlatform {
 // ── ClipboardOps ──────────────────────────────────────────────────────────────
 
 impl ClipboardOps for MacosPlatform {
-    fn get_text(&self) -> Result<String, String> {
-        get_pasteboard_text()
-    }
-
     fn set_text(&self, text: &str) -> Result<(), String> {
         set_pasteboard_text(text)
     }
@@ -59,19 +55,6 @@ impl PermissionsOps for MacosPlatform {
 }
 
 // ── macOS clipboard implementation ────────────────────────────────────────────
-
-fn get_pasteboard_text() -> Result<String, String> {
-    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-
-    unsafe {
-        let pb = NSPasteboard::generalPasteboard();
-        let ns_type = NSPasteboardTypeString;
-        match pb.stringForType(ns_type) {
-            Some(s) => Ok(s.to_string()),
-            None => Ok(String::new()),
-        }
-    }
-}
 
 fn set_pasteboard_text(text: &str) -> Result<(), String> {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};

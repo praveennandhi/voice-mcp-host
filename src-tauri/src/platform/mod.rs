@@ -72,6 +72,7 @@ pub enum PermissionState {
 // ── Platform traits ───────────────────────────────────────────────────────────
 
 pub trait ClipboardOps {
+    #[cfg(windows)]
     fn get_text(&self) -> Result<String, String>;
     fn set_text(&self, text: &str) -> Result<(), String>;
     /// Ctrl+V on Windows, Cmd+V on macOS
