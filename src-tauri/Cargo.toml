@@ -1,6 +1,6 @@
 [package]
 name = "voice-mcp-host"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first hotkey-driven dictation with optional LLM and MCP"
 authors = ["Praveen Nandhi"]
 edition = "2021"
