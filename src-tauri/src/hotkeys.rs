@@ -10,8 +10,8 @@ pub fn register(app: &AppHandle) -> tauri::Result<()> {
     let hotkey = cfg.dictation.primary_hotkey.clone();
     let shortcut = parse_shortcut(&hotkey);
 
-    // Unregister first in case a previous instance left the key claimed.
-    let _ = app.global_shortcut().unregister(shortcut);
+    // Re-registration can happen after settings change, so clear this app's old shortcut first.
+    let _ = app.global_shortcut().unregister_all();
 
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
@@ -49,7 +49,7 @@ fn parse_shortcut(hotkey: &str) -> Shortcut {
             if cfg!(target_os = "macos") {
                 Shortcut::from_str("F5").unwrap()
             } else {
-                Shortcut::from_str("F2").unwrap()
+                Shortcut::from_str("F3").unwrap()
             }
         })
 }

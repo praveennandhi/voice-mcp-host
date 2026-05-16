@@ -3,6 +3,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::app_state::{AppState, OverlayPayload};
 use crate::asr::Transcriber;
 use crate::config::{self, Config};
+use crate::hotkeys;
 use crate::logging;
 use crate::model_store;
 use crate::platform::{PermissionsOps, PermissionsStatus, platform};
@@ -28,8 +29,14 @@ pub fn get_config(state: State<AppState>) -> Config {
 
 #[tauri::command]
 pub fn save_config(app: AppHandle, state: State<AppState>, config: Config) -> Result<(), String> {
+    let old_hotkey = state.config.lock().unwrap().dictation.primary_hotkey.clone();
+    let new_hotkey = config.dictation.primary_hotkey.clone();
+
     config::save(&config).map_err(|e| e.to_string())?;
     *state.config.lock().unwrap() = config;
+    if old_hotkey != new_hotkey {
+        hotkeys::register(&app).map_err(|e| e.to_string())?;
+    }
     load_transcriber(&app);
     Ok(())
 }
