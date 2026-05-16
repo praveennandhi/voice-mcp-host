@@ -49,4 +49,4 @@ objc2-foundation = "0.2"
 objc2-app-kit = { version = "0.2", features = ["NSPasteboard", "NSWorkspace", "NSRunningApplication"] }
 core-graphics = { version = "0.24", features = ["highsierra"] }
 core-foundation = "0.10"
-accessibility-sys = "0.1"
+accessibility-sys = "0.2"
