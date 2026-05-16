@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -12,7 +13,18 @@ pub struct AgentRequest<'a> {
     pub target_app: &'a str,
 }
 
-pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<String> {
+pub struct AgentResult {
+    pub mode: AgentOutputMode,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentOutputMode {
+    Insert,
+    Speak,
+}
+
+pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<AgentResult> {
     if !config.enabled {
         bail!("Agent mode is not enabled. Add an OpenAI API key in Settings.");
     }
@@ -43,11 +55,12 @@ pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<Stri
         )
     };
 
-    let instructions = "You are voice-mcp-host's writing agent. Follow the user's spoken command. \
-If selected text is provided, transform or answer using that selected text. \
-If no selected text is provided, use the spoken content itself. \
-Return only the final text to insert into the user's active app. \
-Do not include explanations, markdown fences, preambles, or labels unless the user explicitly asks.";
+    let instructions = "You are voice-mcp-host's voice agent. Infer the user's intent from natural language, the active app, and any selected text. \
+Choose mode \"speak\" only when the best action is to answer audibly without changing the user's app: casual conversation, questions, explanations, coaching, or requests to read selected/provided text aloud. \
+Choose mode \"insert\" when the best action is to put text into the user's app: write, rewrite, summarize, fix, translate, draft, compose, replace, improve, continue, shorten, or format. \
+Selected text is context, not an automatic instruction: reading it aloud is speak; transforming it or producing replacement text is insert. \
+For speak mode, text is the natural spoken answer. For insert mode, text is exactly what should be inserted or replace the selection. \
+Return only valid compact JSON shaped exactly like {\"mode\":\"speak\"|\"insert\",\"text\":\"...\"}. Do not include markdown fences or extra keys.";
 
     let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
     let body = json!({
@@ -73,7 +86,7 @@ Do not include explanations, markdown fences, preambles, or labels unless the us
         bail!("OpenAI returned HTTP {status}: {response_text}");
     }
 
-    parse_output_text(&response_text)
+    parse_agent_result(&response_text)
 }
 
 pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
@@ -149,6 +162,30 @@ fn parse_output_text(body: &str) -> Result<String> {
         bail!("OpenAI response did not include output text");
     }
     Ok(text)
+}
+
+#[derive(Deserialize)]
+struct AgentJson {
+    mode: String,
+    text: String,
+}
+
+fn parse_agent_result(body: &str) -> Result<AgentResult> {
+    let output = parse_output_text(body)?;
+    let parsed = serde_json::from_str::<AgentJson>(output.trim())
+        .with_context(|| format!("OpenAI agent output was not valid JSON: {output}"))?;
+    let text = parsed.text.trim().to_string();
+    if text.is_empty() {
+        bail!("OpenAI agent returned empty text");
+    }
+
+    let mode = match parsed.mode.trim().to_ascii_lowercase().as_str() {
+        "speak" => AgentOutputMode::Speak,
+        "insert" => AgentOutputMode::Insert,
+        other => bail!("OpenAI agent returned unsupported mode: {other}"),
+    };
+
+    Ok(AgentResult { mode, text })
 }
 
 fn play_pcm_audio(bytes: &[u8]) -> Result<()> {

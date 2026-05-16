@@ -1,7 +1,7 @@
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::app_state::{AppState, OverlayPayload, RecorderState};
-use crate::agent::{self, AgentRequest};
+use crate::agent::{self, AgentOutputMode, AgentRequest};
 use crate::audio::AudioCapture;
 use crate::insertion;
 use crate::logging;
@@ -119,9 +119,8 @@ pub fn stop_and_transcribe(app: AppHandle) {
 
                 let selected_text = state.selected_text.lock().unwrap().take();
                 let agent_command = parse_agent_command(&text, &cfg.agent.trigger_word);
-                let mut agent_used = false;
+                let mut should_speak = false;
                 let output_text = if let Some(command) = agent_command {
-                    agent_used = true;
                     set_state(&app_clone, RecorderState::Transcribing);
                     emit_overlay(&app_clone, "transcribing", "Thinking", "Asking agent", None);
                     logging::write_event("agent_started", Some(serde_json::json!({
@@ -137,11 +136,18 @@ pub fn stop_and_transcribe(app: AppHandle) {
                             .map(|t| t.process_name.as_str())
                             .unwrap_or("unknown"),
                     }) {
-                        Ok(reply) => {
+                        Ok(result) => {
                             logging::write_event("agent_completed", Some(serde_json::json!({
-                                "chars": reply.len(),
+                                "chars": result.text.len(),
+                                "mode": match result.mode {
+                                    AgentOutputMode::Insert => "insert",
+                                    AgentOutputMode::Speak => "speak",
+                                },
                             })));
-                            reply
+                            if result.mode == AgentOutputMode::Speak {
+                                should_speak = true;
+                            }
+                            result.text
                         }
                         Err(e) => {
                             logging::write_event("agent_failed", Some(serde_json::json!({
@@ -155,6 +161,27 @@ pub fn stop_and_transcribe(app: AppHandle) {
                 } else {
                     text
                 };
+
+                if should_speak {
+                    set_state(&app_clone, RecorderState::Pasting);
+                    emit_overlay(&app_clone, "speaking", "Speaking", "Playing response", None);
+                    let agent_cfg = cfg.agent.clone();
+                    let spoken_text = output_text.clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = agent::speak_response(&agent_cfg, &spoken_text) {
+                            logging::write_event("agent_tts_failed", Some(serde_json::json!({
+                                "error": e.to_string(),
+                            })));
+                        } else {
+                            logging::write_event("agent_tts_completed", Some(serde_json::json!({
+                                "chars": spoken_text.len(),
+                            })));
+                        }
+                    });
+                    set_state(&app_clone, RecorderState::Ready);
+                    emit_overlay(&app_clone, "ready", "Done", "Response spoken", Some(1200));
+                    return;
+                }
 
                 set_state(&app_clone, RecorderState::Pasting);
                 emit_overlay(&app_clone, "pasting", "Inserting", "Sending text to your app", None);
@@ -180,22 +207,6 @@ pub fn stop_and_transcribe(app: AppHandle) {
                 );
 
                 logging::write_event("paste_completed", Some(serde_json::to_value(&report).unwrap_or_default()));
-                if agent_used && cfg.agent.speak_responses {
-                    let agent_cfg = cfg.agent.clone();
-                    let spoken_text = output_text.clone();
-                    std::thread::spawn(move || {
-                        if let Err(e) = agent::speak_response(&agent_cfg, &spoken_text) {
-                            logging::write_event("agent_tts_failed", Some(serde_json::json!({
-                                "error": e.to_string(),
-                            })));
-                        } else {
-                            logging::write_event("agent_tts_completed", Some(serde_json::json!({
-                                "chars": spoken_text.len(),
-                            })));
-                        }
-                    });
-                }
-
                 if report.paste_status == "success" {
                     set_state(&app_clone, RecorderState::Ready);
                     emit_overlay(&app_clone, "ready", "Inserted", "Text added", Some(1200));
