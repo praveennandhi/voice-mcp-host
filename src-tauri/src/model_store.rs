@@ -267,6 +267,28 @@ pub fn active_engine(cache_dir: &Path) -> Option<(EngineKind, PathBuf)> {
     engine_candidates(cache_dir).into_iter().next()
 }
 
+pub fn server_candidates(cache_dir: &Path) -> Vec<(EngineKind, PathBuf)> {
+    let mut candidates = Vec::new();
+
+    for (kind, engine_path) in engine_candidates(cache_dir) {
+        let server_path = engine_path.with_file_name(server_binary_name());
+        if server_path.exists() && !candidates.iter().any(|(_, p)| p == &server_path) {
+            candidates.push((kind, server_path));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in bundled_macos_server_candidates() {
+            if path.exists() && !candidates.iter().any(|(_, p)| p == &path) {
+                candidates.push((EngineKind::Macos, path));
+            }
+        }
+    }
+
+    candidates
+}
+
 /// Download the preferred precompiled whisper-cli binary. On Windows, an
 /// NVIDIA GPU selects the CUDA build; otherwise CPU is used.
 #[cfg(windows)]
@@ -317,6 +339,14 @@ fn bundled_macos_engine_candidates() -> Vec<PathBuf> {
             .join("whisper-cli"),
     );
     candidates
+}
+
+#[cfg(target_os = "macos")]
+fn bundled_macos_server_candidates() -> Vec<PathBuf> {
+    bundled_macos_engine_candidates()
+        .into_iter()
+        .map(|path| path.with_file_name("whisper-server"))
+        .collect()
 }
 
 #[cfg(windows)]
@@ -376,8 +406,9 @@ fn download_engine_kind(app: &AppHandle, cache_dir: &Path, kind: EngineKind) -> 
         let mut entry = archive.by_index(i).context("failed to read zip entry")?;
         let entry_name = entry.name().to_string();
         let is_cli = entry_name.ends_with("whisper-cli.exe") || entry_name.ends_with("whisper-cli");
+        let is_server = entry_name.ends_with("whisper-server.exe") || entry_name.ends_with("whisper-server");
         let is_needed_library = entry_name.ends_with(".dll") || entry_name.ends_with(".dylib");
-        if is_cli || is_needed_library {
+        if is_cli || is_server || is_needed_library {
             let file_name = std::path::Path::new(&entry_name)
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -419,6 +450,14 @@ fn engine_binary_name() -> &'static str {
         "whisper-cli.exe"
     } else {
         "whisper-cli"
+    }
+}
+
+fn server_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "whisper-server.exe"
+    } else {
+        "whisper-server"
     }
 }
 

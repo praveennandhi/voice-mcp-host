@@ -10,9 +10,10 @@ if (process.platform !== 'darwin') {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'src-tauri', 'bundled', 'whisper-macos');
 const outBin = join(outDir, 'whisper-cli');
+const outServer = join(outDir, 'whisper-server');
 
-if (existsSync(outBin)) {
-  console.log(`Bundled macOS whisper-cli already exists: ${outBin}`);
+if (existsSync(outBin) && existsSync(outServer)) {
+  console.log(`Bundled macOS whisper binaries already exist: ${outDir}`);
   process.exit(0);
 }
 
@@ -55,6 +56,9 @@ execFileSync('cmake', [
 execFileSync('cmake', ['--build', buildDir, '--config', 'Release', '--target', 'whisper-cli'], {
   stdio: 'inherit',
 });
+execFileSync('cmake', ['--build', buildDir, '--config', 'Release', '--target', 'whisper-server'], {
+  stdio: 'inherit',
+});
 
 const candidates = [
   join(buildDir, 'bin', 'whisper-cli'),
@@ -66,6 +70,19 @@ if (!built) {
   process.exit(1);
 }
 
+const serverCandidates = [
+  join(buildDir, 'bin', 'whisper-server'),
+  join(buildDir, 'examples', 'server', 'whisper-server'),
+];
+const builtServer = serverCandidates.find(existsSync);
+if (!builtServer) {
+  console.error('Built whisper-server was not found in the expected build output.');
+  process.exit(1);
+}
+
 cpSync(built, outBin);
+cpSync(builtServer, outServer);
 execFileSync('chmod', ['755', outBin], { stdio: 'inherit' });
+execFileSync('chmod', ['755', outServer], { stdio: 'inherit' });
 console.log(`Bundled macOS whisper-cli: ${outBin}`);
+console.log(`Bundled macOS whisper-server: ${outServer}`);

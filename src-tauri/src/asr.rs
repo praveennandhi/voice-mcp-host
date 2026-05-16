@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 use crate::config::AsrConfig;
 use crate::logging;
 use crate::model_store;
@@ -45,6 +46,7 @@ impl Transcriber {
 struct WhisperCppTranscriber {
     model_path: PathBuf,
     engines: Vec<(String, PathBuf)>,
+    server: Option<WhisperServer>,
 }
 
 impl WhisperCppTranscriber {
@@ -64,9 +66,17 @@ impl WhisperCppTranscriber {
                 engine_path.display()
             );
         }
+        let server = start_whisper_server(cache_dir, model_path)
+            .inspect_err(|e| {
+                logging::write_event("whisper_server_unavailable", Some(serde_json::json!({
+                    "error": e.to_string(),
+                })));
+            })
+            .ok();
         Ok(Self {
             model_path: model_path.to_owned(),
             engines,
+            server,
         })
     }
 
@@ -85,7 +95,19 @@ impl WhisperCppTranscriber {
 
         write_wav(&wav_path, audio)?;
 
-        let result = self.run_with_fallback(&wav_path, language);
+        let result = if let Some(server) = &self.server {
+            match server.transcribe(&wav_path, language) {
+                Ok(text) => Ok(text),
+                Err(e) => {
+                    logging::write_event("whisper_server_failed", Some(serde_json::json!({
+                        "error": e.to_string(),
+                    })));
+                    self.run_with_fallback(&wav_path, language)
+                }
+            }
+        } else {
+            self.run_with_fallback(&wav_path, language)
+        };
         let _ = std::fs::remove_file(&wav_path);
         result
     }
@@ -108,6 +130,133 @@ impl WhisperCppTranscriber {
 
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no whisper-cli engine available")))
     }
+}
+
+struct WhisperServer {
+    child: Child,
+    port: u16,
+    engine: String,
+}
+
+impl WhisperServer {
+    fn transcribe(&self, wav_path: &Path, language: &str) -> Result<String> {
+        let started = Instant::now();
+        let boundary = format!("voice-mcp-host-{}", std::process::id());
+        let body = multipart_body(wav_path, language, &boundary)?;
+
+        let response = reqwest::blocking::Client::new()
+            .post(format!("http://127.0.0.1:{}/inference", self.port))
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(body)
+            .send()
+            .context("whisper-server inference request failed")?;
+
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        logging::write_event("whisper_server_raw", Some(serde_json::json!({
+            "engine": self.engine,
+            "port": self.port,
+            "status": status.as_u16(),
+            "duration_ms": started.elapsed().as_millis(),
+            "body_preview": body.chars().take(500).collect::<String>(),
+        })));
+
+        if !status.is_success() {
+            bail!("whisper-server returned HTTP {status}: {body}");
+        }
+
+        parse_transcript_json(&body)
+    }
+}
+
+fn multipart_body(wav_path: &Path, language: &str, boundary: &str) -> Result<Vec<u8>> {
+    let wav = std::fs::read(wav_path).context("failed to read WAV for whisper-server request")?;
+    let mut body = Vec::with_capacity(wav.len() + 1024);
+    push_form_field(&mut body, boundary, "temperature", "0.0");
+    push_form_field(&mut body, boundary, "temperature_inc", "0.2");
+    push_form_field(&mut body, boundary, "response_format", "json");
+    push_form_field(&mut body, boundary, "language", language);
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n",
+    );
+    body.extend_from_slice(b"Content-Type: audio/wav\r\n\r\n");
+    body.extend_from_slice(&wav);
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    Ok(body)
+}
+
+fn push_form_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
+    );
+    body.extend_from_slice(value.as_bytes());
+    body.extend_from_slice(b"\r\n");
+}
+
+impl Drop for WhisperServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn start_whisper_server(cache_dir: &Path, model_path: &Path) -> Result<WhisperServer> {
+    let (kind, server_path) = model_store::server_candidates(cache_dir)
+        .into_iter()
+        .next()
+        .context("whisper-server binary not available")?;
+    let port = reserve_local_port()?;
+    let started = Instant::now();
+    let child = hidden_command(&server_path)
+        .args([
+            "-m", model_path.to_string_lossy().as_ref(),
+            "--host", "127.0.0.1",
+            "--port", &port.to_string(),
+            "--inference-path", "/inference",
+            "-nt",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("failed to start {}", server_path.display()))?;
+
+    let server = WhisperServer {
+        child,
+        port,
+        engine: kind.label().to_string(),
+    };
+    wait_for_server(port)?;
+    logging::write_event("whisper_server_started", Some(serde_json::json!({
+        "engine": server.engine,
+        "path": server_path.display().to_string(),
+        "port": port,
+        "startup_ms": started.elapsed().as_millis(),
+    })));
+    Ok(server)
+}
+
+fn reserve_local_port() -> Result<u16> {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .context("failed to reserve local ASR server port")?;
+    Ok(listener.local_addr()?.port())
+}
+
+fn wait_for_server(port: u16) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(45);
+    while Instant::now() < deadline {
+        match std::net::TcpStream::connect(("127.0.0.1", port)) {
+            Ok(_) => return Ok(()),
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    bail!("whisper-server did not start listening on port {port}");
 }
 
 struct FasterWhisperTranscriber {
@@ -271,6 +420,28 @@ fn normalize_faster_whisper_compute_type(device: &str, compute_type: &str) -> St
             _ => "float16".into(),
         },
     }
+}
+
+fn parse_transcript_json(body: &str) -> Result<String> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .context("whisper-server returned invalid JSON")?;
+    if let Some(text) = value.get("text").and_then(|v| v.as_str()) {
+        return Ok(text.trim().to_string());
+    }
+    if let Some(text) = value.pointer("/result/text").and_then(|v| v.as_str()) {
+        return Ok(text.trim().to_string());
+    }
+    if let Some(segments) = value.get("segments").and_then(|v| v.as_array()) {
+        let text = segments
+            .iter()
+            .filter_map(|segment| segment.get("text").and_then(|v| v.as_str()))
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return Ok(text);
+    }
+    bail!("whisper-server response did not contain transcript text");
 }
 
 pub fn engine_path_for(model_path: &Path) -> Result<PathBuf> {
