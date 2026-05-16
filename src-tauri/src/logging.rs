@@ -47,26 +47,6 @@ pub fn write_event(event: &str, payload: Option<Value>) {
     }
 }
 
-pub fn write_last_transcript(text: &str) -> Result<(), String> {
-    #[cfg(windows)]
-    let dir = {
-        let appdata = std::env::var("APPDATA").map_err(|e| e.to_string())?;
-        PathBuf::from(appdata).join("voice-mcp-host")
-    };
-    #[cfg(target_os = "macos")]
-    let dir = {
-        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-        PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("voice-mcp-host")
-    };
-
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    fs::write(dir.join("last_transcript.txt"), text).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 pub fn log_dir_path() -> PathBuf {
     log_dir()
 }

@@ -5,10 +5,6 @@ description = "Local-first hotkey-driven dictation with optional LLM and MCP"
 authors = ["Praveen Nandhi"]
 edition = "2021"
 
-[lib]
-name = "voice_mcp_host_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -17,6 +13,7 @@ anyhow = "1"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
+tokio = { version = "1", features = ["rt-multi-thread"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -25,9 +22,10 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 # Audio capture
 cpal = "0.15"
 
-# ASR — whisper.cpp bindings
-# Enable "metal" feature on macOS, "cuda" on Windows with NVIDIA (optional)
-whisper-rs = { version = "0.13", features = [] }
+# WAV encoding for subprocess ASR
+hound = "3"
+# ZIP extraction for whisper-cli binary download
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Model download
 reqwest = { version = "0.12", features = ["blocking", "stream", "rustls-tls"], default-features = false }

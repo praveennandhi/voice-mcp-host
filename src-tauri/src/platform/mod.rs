@@ -56,18 +56,13 @@ pub struct PermissionsStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum PermissionState {
+    #[cfg(target_os = "macos")]
     Granted,
+    #[cfg(target_os = "macos")]
     Denied,
+    #[cfg(target_os = "macos")]
     Unknown,
     NotRequired,
-}
-
-impl PermissionsStatus {
-    pub fn all_granted(&self) -> bool {
-        let mic_ok = matches!(self.microphone, PermissionState::Granted | PermissionState::NotRequired);
-        let ax_ok = matches!(self.accessibility, PermissionState::Granted | PermissionState::NotRequired);
-        mic_ok && ax_ok
-    }
 }
 
 // ── Platform traits ───────────────────────────────────────────────────────────
@@ -81,6 +76,7 @@ pub trait ClipboardOps {
 
 pub trait WindowTargetOps {
     fn capture_foreground(&self) -> TargetWindow;
+    fn focus_target(&self, target: &TargetWindow) -> Result<(), String>;
 }
 
 pub trait PermissionsOps {

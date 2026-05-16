@@ -40,6 +40,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html.overlay-window,
+body.overlay-window,
+html.overlay-window #root {
+  width: 100%;
+  height: 100%;
+  background: #0b111c !important;
+  overflow: hidden;
+}
+
+body.overlay-window {
+  color: #fff;
+}
+
 button {
   cursor: pointer;
   border: 1px solid var(--border);
@@ -112,6 +125,11 @@ select:focus {
 .settings-header h1 {
   font-size: 16px;
   font-weight: 600;
+  flex: 1;
+}
+
+.quit-button {
+  padding: 5px 12px;
 }
 
 .settings-body {
@@ -200,7 +218,117 @@ select:focus {
   text-align: center;
 }
 
-.download-block p { color: var(--text-muted); font-size: 13px; }
+.download-block h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.download-block p,
+.muted-copy {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.download-percent {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.model-help {
+  max-width: 460px;
+}
+
+.backend-note {
+  max-width: 460px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.engine-status-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 16px;
+  align-items: center;
+  min-width: 220px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.engine-status-grid span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.engine-status-grid strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.engine-upgrade-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  max-width: 460px;
+}
+
+.engine-upgrade-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.manual-engine-note {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  width: min(100%, 420px);
+  padding: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.manual-engine-note span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.manual-engine-note code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.manual-engine-note button {
+  justify-self: start;
+}
+
+.inline-error,
+.inline-warning {
+  max-width: 420px;
+  word-break: break-word;
+}
+
+.inline-error {
+  color: var(--error) !important;
+}
+
+.inline-warning {
+  color: var(--warning) !important;
+}
+
+.compact-row {
+  width: min(100%, 420px);
+  text-align: left;
+}
 
 .progress-bar-wrap {
   width: 100%;
@@ -245,71 +373,225 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
+  background: #0b111c;
+  padding: 0;
+  cursor: grab;
+  user-select: none;
+}
+
+.overlay-root:active {
+  cursor: grabbing;
 }
 
 .overlay-card {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 64px minmax(0, 1fr) 66px;
   align-items: center;
   gap: 12px;
-  background: rgba(20, 20, 20, 0.92);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.08);
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  background:
+    radial-gradient(circle at 22% 42%, rgba(229, 74, 118, 0.16), transparent 34%),
+    linear-gradient(135deg, #171936 0%, #0b2932 100%);
+  border: 1px solid rgba(135, 214, 219, 0.22);
+  border-radius: 0;
+  padding: 13px 18px 13px 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.overlay-card--recording {
+  border-color: rgba(236, 88, 129, 0.42);
+}
+
+.overlay-card--transcribing {
+  border-color: rgba(71, 150, 255, 0.46);
+}
+
+.overlay-card--pasting {
+  border-color: rgba(224, 160, 58, 0.46);
+}
+
+.overlay-card--ready {
+  border-color: rgba(76, 175, 125, 0.46);
+}
+
+.overlay-card--error {
+  border-color: rgba(224, 92, 92, 0.54);
+}
+
+.overlay-grip {
+  height: 76px;
+  width: 18px;
   border-radius: 12px;
-  padding: 12px 18px;
-  min-width: 200px;
-  max-width: 340px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  background: rgba(124, 117, 202, 0.24);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.overlay-grip span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.62);
+}
+
+.overlay-mic {
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #e54a76 0%, #d32f69 100%);
+  box-shadow: 0 0 0 10px rgba(229,74,118,0.14), 0 12px 28px rgba(211,47,105,0.42);
 }
 
 .overlay-indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  position: relative;
+  width: 18px;
+  height: 28px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: none;
 }
 
-.overlay-indicator.recording {
-  background: #e05c5c;
-  animation: pulse 1.2s ease-in-out infinite;
+.overlay-indicator::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 18px;
+  height: 11px;
+  border: 3px solid #fff;
+  border-top: 0;
+  border-radius: 0 0 999px 999px;
+  transform: translateX(-50%);
 }
 
-.overlay-indicator.transcribing {
-  background: var(--accent);
-  animation: spin-ring 1s linear infinite;
-  border-radius: 0;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--accent);
-  border-top-color: transparent;
-  border-radius: 50%;
+.overlay-indicator::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -13px;
+  width: 3px;
+  height: 8px;
+  border-radius: 999px;
+  background: #fff;
+  transform: translateX(-50%);
 }
 
-.overlay-indicator.pasting  { background: var(--warning); }
-.overlay-indicator.ready    { background: var(--success); }
-.overlay-indicator.error    { background: #e05c5c; }
-.overlay-indicator.idle     { background: var(--text-muted); }
+.overlay-card--transcribing .overlay-mic {
+  background: linear-gradient(145deg, #4f8ef7 0%, #1f6fe5 100%);
+  box-shadow: 0 0 0 10px rgba(79,142,247,0.14), 0 12px 28px rgba(31,111,229,0.36);
+}
 
-.overlay-text { display: flex; flex-direction: column; }
+.overlay-card--pasting .overlay-mic {
+  background: linear-gradient(145deg, #e0a03a 0%, #c77922 100%);
+  box-shadow: 0 0 0 10px rgba(224,160,58,0.14), 0 12px 28px rgba(199,121,34,0.34);
+}
+
+.overlay-card--ready .overlay-mic {
+  background: linear-gradient(145deg, #4caf7d 0%, #218957 100%);
+  box-shadow: 0 0 0 10px rgba(76,175,125,0.14), 0 12px 28px rgba(33,137,87,0.34);
+}
+
+.overlay-card--error .overlay-mic {
+  background: linear-gradient(145deg, #e05c5c 0%, #bf3939 100%);
+  box-shadow: 0 0 0 10px rgba(224,92,92,0.14), 0 12px 28px rgba(191,57,57,0.34);
+}
+
+.overlay-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.overlay-status {
+  align-self: flex-start;
+  color: rgba(255,255,255,0.88);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.11);
+}
+
+.overlay-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .overlay-title {
   color: #fff;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 800;
   line-height: 1.2;
 }
 
 .overlay-subtitle {
-  color: rgba(255,255,255,0.55);
-  font-size: 12px;
-  margin-top: 2px;
+  color: rgba(255,255,255,0.68);
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow: visible;
+  word-break: normal;
+}
+
+.overlay-wave {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.overlay-wave span {
+  width: 5px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #7b7ff0 0%, #29d6b4 100%);
+  opacity: 0.9;
+  animation: wave 900ms ease-in-out infinite;
+}
+
+.overlay-wave span:nth-child(2n) {
+  height: 30px;
+}
+
+.overlay-wave span:nth-child(3n) {
+  height: 42px;
+}
+
+.overlay-card--ready .overlay-wave span,
+.overlay-card--error .overlay-wave span {
+  animation: none;
+  opacity: 0.45;
+}
+
+/*
+ * Legacy icon styles kept harmless for older overlay markup during hot reload.
+ */
+.overlay-icon {
+  display: none;
+  flex-shrink: 0;
 }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 0.55; transform: scale(0.88); }
 }
 
-@keyframes spin-ring {
-  to { transform: rotate(360deg); }
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.45); }
+  50% { transform: scaleY(1); }
 }

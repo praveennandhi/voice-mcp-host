@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "dictation": {
-    "primary_hotkey": "F2",
+    "primary_hotkey": "F3",
     "language": "en",
     "min_record_ms": 300,
     "max_record_seconds": 120
@@ -11,7 +11,12 @@
     "samplerate": 16000
   },
   "asr": {
-    "model_name": "ggml-base.en.bin",
+    "backend": "whisper_cpp",
+    "model_name": "ggml-large-v3-turbo-q5_0.bin",
+    "faster_whisper_model_name": "h2oai/faster-whisper-large-v3-turbo",
+    "faster_whisper_device": "cuda",
+    "faster_whisper_compute_type": "float16",
+    "faster_whisper_python_path": null,
     "model_cache_dir": null
   },
   "insertion": {

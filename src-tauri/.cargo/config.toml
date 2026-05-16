@@ -1,0 +1,6 @@
+[env]
+# LLVM 22's bindgen makes whisper_full_params opaque (anonymous struct members
+# become inaccessible). Skip re-generation and use the pre-built bindings.rs
+# that ships with whisper-rs-sys — it was produced with an older LLVM that
+# correctly expands greedy.best_of and beam_search.*.
+WHISPER_DONT_GENERATE_BINDINGS = "1"

@@ -20,7 +20,12 @@ export interface AudioConfig {
 }
 
 export interface AsrConfig {
+  backend: 'whisper_cpp' | 'faster_whisper';
   model_name: string;
+  faster_whisper_model_name: string;
+  faster_whisper_device: string;
+  faster_whisper_compute_type: string;
+  faster_whisper_python_path: string | null;
   model_cache_dir: string | null;
 }
 
@@ -36,6 +41,10 @@ export interface PrivacyConfig {
 
 export interface AppStatus {
   model_downloaded: boolean;
+  engine_downloaded: boolean;
+  gpu_detected: boolean;
+  preferred_acceleration: string;
+  active_acceleration: string | null;
   model_name: string;
   transcriber_ready: boolean;
   recorder_state: string;
@@ -51,8 +60,11 @@ export type PermissionState = 'Granted' | 'Denied' | 'Unknown' | 'NotRequired';
 
 export interface AvailableModel {
   name: string;
+  display_name: string;
+  description: string;
   downloaded: boolean;
   size_bytes: number;
+  recommended: boolean;
 }
 
 export interface DownloadProgress {

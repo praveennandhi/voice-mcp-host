@@ -23,15 +23,15 @@
       {
         "label": "overlay",
         "title": "voice-mcp-host overlay",
-        "width": 360,
-        "height": 96,
+        "width": 390,
+        "height": 118,
         "visible": false,
         "focus": false,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "transparent": true
+        "transparent": false
       }
     ],
     "security": {
@@ -41,17 +41,15 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg"],
-    "resources": ["default_config.json"],
+    "resources": ["default_config.json", "sidecars/voice_mcp_asr_sidecar.py", "bundled/faster-whisper"],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "voice-mcp-host needs the microphone to transcribe your speech."
-      }
+      "infoPlist": "macos_info.plist"
     },
     "windows": {
       "nsis": {
-        "installMode": "perMachine"
+        "installMode": "currentUser"
       }
     }
   }

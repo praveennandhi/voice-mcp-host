@@ -28,12 +28,32 @@ impl RecorderState {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct OverlayPayload {
+    pub state: String,
+    pub title: String,
+    pub subtitle: String,
+    pub hide_after_ms: Option<u64>,
+}
+
+impl OverlayPayload {
+    pub fn idle() -> Self {
+        Self {
+            state: "idle".into(),
+            title: String::new(),
+            subtitle: String::new(),
+            hide_after_ms: None,
+        }
+    }
+}
+
 pub struct AppState {
     pub audio: Mutex<Option<AudioCapture>>,
     pub transcriber: Mutex<Option<Transcriber>>,
     pub target_window: Mutex<Option<TargetWindow>>,
     pub config: Mutex<Config>,
     pub recorder_state: Mutex<RecorderState>,
+    pub overlay_state: Mutex<OverlayPayload>,
 }
 
 impl AppState {
@@ -44,6 +64,7 @@ impl AppState {
             target_window: Mutex::new(None),
             config: Mutex::new(config),
             recorder_state: Mutex::new(RecorderState::Idle),
+            overlay_state: Mutex::new(OverlayPayload::idle()),
         }
     }
 }

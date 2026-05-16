@@ -1,6 +1,6 @@
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
-use crate::app_state::{AppState, RecorderState};
+use crate::app_state::{AppState, OverlayPayload, RecorderState};
 use crate::audio::AudioCapture;
 use crate::insertion;
 use crate::logging;
@@ -23,7 +23,7 @@ pub fn start_recording(app: AppHandle) {
         Ok(capture) => {
             *state.audio.lock().unwrap() = Some(capture);
             set_state(&app, RecorderState::Recording);
-            emit_overlay(&app, "recording", "Listening", "Press hotkey again to stop", None);
+            emit_overlay(&app, "recording", "Listening", "Press F3 again to stop", None);
         }
         Err(e) => {
             logging::write_event("recording_start_failed", Some(serde_json::json!({ "error": e.to_string() })));
@@ -44,7 +44,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
 
     let duration_ms = capture.duration_ms();
     set_state(&app, RecorderState::Transcribing);
-    emit_overlay(&app, "transcribing", "Transcribing", "Converting speech…", None);
+    emit_overlay(&app, "transcribing", "Transcribing", "Turning speech into text", None);
 
     logging::write_event("recording_stopped", Some(serde_json::json!({
         "duration_ms": duration_ms,
@@ -111,9 +111,19 @@ pub fn stop_and_transcribe(app: AppHandle) {
                 }
 
                 set_state(&app_clone, RecorderState::Pasting);
-                emit_overlay(&app_clone, "pasting", "Pasting", "", None);
+                emit_overlay(&app_clone, "pasting", "Inserting", "Sending text to your app", None);
 
                 logging::write_event("paste_attempted", target.as_ref().map(|t| t.context_json()));
+
+                if let Some(ref target) = target {
+                    if let Err(e) = platform().focus_target(target) {
+                        logging::write_event("target_focus_failed", Some(serde_json::json!({
+                            "error": e,
+                            "target": target.context_json(),
+                        })));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(80));
+                }
 
                 let fallback_path = config_dir_fallback();
                 let report = insertion::paste_text(
@@ -127,10 +137,10 @@ pub fn stop_and_transcribe(app: AppHandle) {
 
                 if report.paste_status == "success" {
                     set_state(&app_clone, RecorderState::Ready);
-                    emit_overlay(&app_clone, "ready", "Done", "Pasted ✓", Some(5000));
+                    emit_overlay(&app_clone, "ready", "Inserted", "Text added", Some(1200));
                 } else {
                     let msg = if report.error_message.is_empty() {
-                        "Paste failed — transcript is on clipboard".into()
+                        "Paste failed - transcript is on clipboard".into()
                     } else {
                         report.error_message.clone()
                     };
@@ -152,16 +162,25 @@ fn set_state(app: &AppHandle, s: RecorderState) {
 }
 
 fn emit_overlay(app: &AppHandle, state: &str, title: &str, subtitle: &str, hide_after_ms: Option<u64>) {
-    let payload = serde_json::json!({
-        "state": state,
-        "title": title,
-        "subtitle": subtitle,
-        "hide_after_ms": hide_after_ms,
-    });
+    let payload = OverlayPayload {
+        state: state.into(),
+        title: title.into(),
+        subtitle: subtitle.into(),
+        hide_after_ms,
+    };
+    *app.state::<AppState>().overlay_state.lock().unwrap() = payload.clone();
 
     if let Some(win) = app.get_webview_window("overlay") {
-        let _ = win.emit("overlay-state", payload);
         let _ = win.show();
+        let _ = win.emit("overlay-state", payload.clone());
+        let win_retry = win.clone();
+        let payload_retry = payload.clone();
+        std::thread::spawn(move || {
+            for _ in 0..6 {
+                std::thread::sleep(std::time::Duration::from_millis(75));
+                let _ = win_retry.emit("overlay-state", payload_retry.clone());
+            }
+        });
         // Critical: do NOT call set_focus() on the overlay.
         // Focusing it would cause paste to land in the overlay instead of the target app.
     }
@@ -179,6 +198,7 @@ fn emit_overlay(app: &AppHandle, state: &str, title: &str, subtitle: &str, hide_
             let current = state.recorder_state.lock().unwrap().clone();
             if matches!(current, RecorderState::Ready | RecorderState::Error(_)) {
                 *state.recorder_state.lock().unwrap() = RecorderState::Idle;
+                *state.overlay_state.lock().unwrap() = OverlayPayload::idle();
             }
         });
     }

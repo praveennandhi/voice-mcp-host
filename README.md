@@ -1,149 +1,199 @@
 # voice-mcp-host
 
-> **Working name — final name TBD.** This is a placeholder folder name so the project can move forward without bikeshedding.
+Local-first desktop dictation for Windows and macOS.
 
-A local-first, hotkey-driven dictation app for Windows and macOS that progressively unlocks LLM and tool-use capabilities.
+Press a hotkey, speak, and the transcript is pasted into the app you were already using.
 
-**Hold a hotkey. Talk. Text appears at your cursor.**
+## What It Does
 
-That's the whole pitch in one sentence. The rest is optional power.
+voice-mcp-host is a small background app for system-wide speech-to-text:
 
----
+- Press `F3` on Windows, or `F5` on macOS.
+- Speak.
+- Press the hotkey again to stop.
+- The app transcribes locally and pastes the text at your cursor.
 
-## Status
+It works in any app that accepts pasted text: browser fields, email, Slack, notes, editors, documents, and terminals.
 
-**Planning. No code exists yet.** This README is the design contract — what we agreed to build, what we agreed *not* to build, and in what order. Code starts after this document survives a night of sleep.
+## Current Status
 
-License: **MIT**. The intent is genuinely "use this, fork it, ship it." Not a commercial play.
+Version `0.1.0` is focused on local dictation.
 
----
+Windows is the primary tested platform right now. macOS support is in progress and needs real-device QA for permissions, packaging, and paste behavior.
 
-## What it is
+Future versions are planned to add:
 
-A voice tool with three progressive tiers. Each tier is independently useful — you can stop at any tier and still have a working app.
+- Ask mode: speak a question and paste an LLM answer.
+- Agent mode: connect LLMs to MCP tools with approval prompts.
+- More models, backends, and platform polish.
 
-### Tier 1 — Dictation *(no config required)*
+## Install
 
-Install. Set a hotkey. Talk. Text appears at the cursor in whatever app is focused.
+### Windows
 
-- Fully offline. No internet, no account, no API keys.
-- Whisper running locally — CPU everywhere, Metal on Apple Silicon, CUDA on Windows with NVIDIA.
-- Works in any application that accepts text input.
+1. Go to the latest release:
 
-If you never go past Tier 1, you have a real dictation app and that's fine.
+   ```text
+   https://github.com/<owner>/voice-mcp-host/releases/latest
+   ```
 
-### Tier 2 — Ask mode *(add an LLM key)*
+2. Download:
 
-Drop in an OpenAI-compatible endpoint and key in settings. Prefix your dictation with `"ask, ..."`:
+   ```text
+   voice-mcp-host_0.1.0_x64-setup.exe
+   ```
 
-> *"ask, what's the capital of Mongolia?"*
+3. Run the installer.
 
-The reply gets pasted at your cursor. Works with:
+4. Open `voice-mcp-host` from the Start menu.
 
-- **Local:** Ollama, LM Studio, llama.cpp server, anything OpenAI-compatible running on your machine
-- **Cloud:** OpenAI, Groq, Together, Fireworks, or anything that speaks the OpenAI chat API
+5. On first launch, the app guides you through downloading:
 
-Within-session conversation memory is on — follow-up turns know what the previous turn was about. Clear it with a button or a timeout.
+   - a transcription engine
+   - a Whisper model
 
-### Tier 3 — Agent mode *(add MCP servers)*
+6. When status says `Ready`, press `F3` anywhere to dictate.
 
-Configure one or more [MCP](https://modelcontextprotocol.io) servers. Prefix with `"agent, ..."` and the LLM can call tools:
+Windows SmartScreen may warn because early builds are unsigned. Choose **More info** then **Run anyway** if you trust the release source.
 
-> *"agent, add this paragraph to my Obsidian daily note"*
-> *"agent, turn off the office lights"*
-> *"agent, what did I commit yesterday in the rust repo?"*
+### macOS
 
-Each proposed tool call surfaces an **approval prompt** in the overlay before it executes — Allow / Deny / Always allow this tool. Tool results feed back to the LLM, which either chains more calls or produces a final reply (pasted at the cursor, same as dictation).
+macOS builds are intended, but should be considered test builds until signed/notarized releases are available.
 
----
+See [INSTALL.md](INSTALL.md) for current macOS test instructions.
 
-## Modes recap
+## Requirements
 
-| Prefix | Mode | Requires |
-|---|---|---|
-| *(none)* | Dictate | Nothing |
-| `"ask, ..."` | LLM chat | LLM endpoint + key |
-| `"agent, ..."` | Tool-using agent | LLM + ≥1 MCP server |
+Normal users do not need developer tools.
 
-The prefix word is configurable in settings.
+You do **not** need:
 
----
+- Python
+- Node.js
+- npm
+- Rust
+- Git
+- Visual Studio
+- CUDA Toolkit
+- an API key
+- an internet account
 
-## On memory, intentionally
+You only need:
 
-**This app does not implement its own long-term memory subsystem.** That is a feature, not a gap.
+- Windows 10/11 for the Windows installer
+- internet access for first-time model/engine download
+- a microphone
 
-MCP already has memory servers — Anthropic's reference `memory` server, `mem0`, and others. Plug one in via Tier 3 and every agent interaction gets persistent memory across sessions, with whichever memory implementation you prefer. Swap it out when something better comes along.
+## Privacy
 
-What's built in:
+Dictation runs locally on your machine.
 
-- **Within-session memory** — multi-turn context inside an active conversation (Tier 2+).
-- **Long-term memory** — *not built in. Use a memory MCP server (Tier 3).*
+By default:
 
-This keeps the core app small and lets you pick your own memory stack.
+- audio is captured locally
+- transcription runs locally
+- transcript text is pasted locally
+- no cloud API key is required
+- no audio is uploaded by the app
 
----
+The app may download engines/models from upstream sources during setup. After models are downloaded, normal dictation does not require internet access.
 
-## What's NOT in v1
+## ASR Backends
 
-Equally important as what's in it.
+voice-mcp-host currently supports two local transcription backends.
 
-- TTS / spoken replies *(Phase B — likely Piper local, ElevenLabs/OpenAI cloud)*
-- A user-friendly MCP server marketplace *(v1 = paste JSON config; polish later)*
-- Streaming token-by-token paste *(replies paste atomically)*
-- Mac code-signing / notarization *(v1 ships unsigned; bypass docs included)*
-- Anthropic / Gemini native LLM adapters *(OpenAI-compatible only at first)*
-- Voice commands beyond the three modes *("new line," "press enter," etc.)*
-- Mobile, web, or browser-extension versions
+### whisper.cpp
 
----
+Recommended default.
 
-## Milestones
+- NVIDIA GPU on Windows: CUDA engine
+- AMD/Intel/no GPU on Windows: CPU engine
+- macOS target: Metal engine
 
-| Version | Adds | Platforms |
-|---|---|---|
-| 0.1 alpha | Tier 1 (dictate) | **Windows + macOS** |
-| 0.2 beta | Tier 2 (ask mode) | Win + Mac |
-| 1.0 | Tier 3 (agent mode) | Win + Mac |
+The app chooses the appropriate whisper.cpp engine automatically.
 
-Each milestone is a real release. If the project stalls after 0.1, there's still a usable cross-platform dictation app.
+### faster-whisper
 
-See [`docs/0.1-desktop-dictation.md`](docs/0.1-desktop-dictation.md) for the 0.1 engineering spec.
+Optional advanced backend.
 
----
+The Windows installer bundles a portable Python runtime and faster-whisper packages, so users do not need to install Python themselves.
 
-## Architecture (high-level)
+Device choices:
 
-- **Shell:** Tauri 2 — Rust core, React + TypeScript UI
-- **ASR:** [`whisper-rs`](https://github.com/tazz4843/whisper-rs) (whisper.cpp bindings) — Metal on Mac, CUDA on Windows with NVIDIA, CPU everywhere else
-- **Hotkey:** `tauri-plugin-global-shortcut`
-- **Paste:** platform-specific
-  - Windows: `windows-sys` clipboard + SendInput
-  - macOS: AppKit + Accessibility API (`enigo` or direct AX)
-- **LLM client:** `reqwest` against any OpenAI-compatible endpoint, supports tool/function calling
-- **MCP host:** `rmcp` (official Rust MCP SDK); servers run as child processes over stdio
+- CUDA: NVIDIA GPU
+- CPU: fallback path
 
-Whisper models download on first run. Nothing else gets bundled into the installer beyond the binary itself.
+Compute choices are restricted by device so invalid combinations such as CPU/float16 are not shown.
 
----
+## Daily Use
 
-## How this relates to other tools
+- `F3`: start listening on Windows
+- `F3` again: stop and transcribe
+- `X` on Settings: minimize/keep app running
+- `Quit`: fully exit the background app
 
-Honest context. These exist and you should know about them:
+The overlay shows the current state:
 
-- **[Wispr Flow](https://wisprflow.ai)** — closed-source, cloud-based, polished. If you don't care about local-first or OSS, use this.
-- **[OpenWhispr](https://github.com/OpenWhispr/openwhispr)** — open-source dictation with BYO models, also exploring MCP. Closely adjacent.
-- **Claude Desktop, ChatGPT Desktop, Cursor** — voice + MCP exists or is coming on the LLM-vendor side, but tied to specific accounts/clouds.
-- **Built-in Windows / macOS dictation** — works, but not LLM/MCP aware.
+- Listening
+- Transcribing
+- Inserting
+- Inserted
 
-This project's specific bet: **fully local-first, BYO-LLM, BYO-MCP, hotkey-first, OSS.** If you have a homelab or just want your voice tool to work without a vendor account, this is for you.
+## Troubleshooting
 
----
+### F3 Does Nothing
 
-## Contributing
+Check that voice-mcp-host is still running. Open it from the Start menu and confirm status is `Ready`.
 
-Too early. Once 0.1 ships there'll be issues and a contribution guide. Until then this repo is design notes.
+Another app may also be using `F3`. Change the hotkey in Settings if needed.
 
----
+### Text Does Not Paste
 
-*This README is the source of truth for what this project is and isn't, until code exists to argue otherwise.*
+The app copies the transcript to the clipboard before sending paste. If paste fails, try pressing `Ctrl+V` manually in the target app.
+
+### CPU Is Slow
+
+CPU transcription is expected to be slower than NVIDIA CUDA. If you have an NVIDIA GPU, use the CUDA whisper.cpp engine or faster-whisper CUDA.
+
+### Model Download Is Large
+
+Whisper models are large because they run locally. The recommended Large v3 Turbo Q5 model balances speed, quality, and download size.
+
+## Build From Source
+
+Only developers need this.
+
+Prerequisites:
+
+- Node.js 20+
+- Rust stable
+- Tauri build prerequisites for your OS
+
+Windows dev run:
+
+```powershell
+npm ci
+npm run tauri dev
+```
+
+Windows release build:
+
+```powershell
+npm run release:windows
+```
+
+The Windows release script prepares the bundled faster-whisper runtime and produces an NSIS installer.
+
+## Project Direction
+
+The project is intended to grow in three tiers:
+
+- Tier 1: local dictation
+- Tier 2: LLM ask mode
+- Tier 3: MCP-powered agent mode
+
+The core goal is a local-first, open-source voice interface that can later connect to user-controlled LLMs and tools without locking people into one vendor.
+
+## License
+
+MIT.

@@ -34,6 +34,10 @@ impl WindowTargetOps for MacosPlatform {
     fn capture_foreground(&self) -> TargetWindow {
         capture_foreground_mac()
     }
+
+    fn focus_target(&self, _target: &TargetWindow) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 // ── PermissionsOps ────────────────────────────────────────────────────────────

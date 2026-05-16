@@ -10,6 +10,9 @@ pub fn register(app: &AppHandle) -> tauri::Result<()> {
     let hotkey = cfg.dictation.primary_hotkey.clone();
     let shortcut = parse_shortcut(&hotkey);
 
+    // Unregister first in case a previous instance left the key claimed.
+    let _ = app.global_shortcut().unregister(shortcut);
+
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {

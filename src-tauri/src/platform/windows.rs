@@ -38,6 +38,10 @@ impl WindowTargetOps for WindowsPlatform {
     fn capture_foreground(&self) -> TargetWindow {
         capture_foreground_win()
     }
+
+    fn focus_target(&self, target: &TargetWindow) -> Result<(), String> {
+        focus_target_win(target)
+    }
 }
 
 // ── PermissionsOps ────────────────────────────────────────────────────────────
@@ -205,4 +209,19 @@ fn capture_foreground_win() -> TargetWindow {
             pid: if pid > 0 { Some(pid) } else { None },
         }
     }
+}
+
+fn focus_target_win(target: &TargetWindow) -> Result<(), String> {
+    let Some(hwnd) = target.hwnd else {
+        return Ok(());
+    };
+    unsafe {
+        let ok = windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(
+            hwnd as usize as windows_sys::Win32::Foundation::HWND,
+        );
+        if ok == 0 {
+            return Err("SetForegroundWindow failed".into());
+        }
+    }
+    Ok(())
 }

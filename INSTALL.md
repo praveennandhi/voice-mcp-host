@@ -2,39 +2,114 @@
 
 ## Windows
 
-1. Download `voice-mcp-host_0.1.0_x64-setup.exe` from the GitHub release.
-2. Run the installer. Windows SmartScreen may show a warning — click **More info → Run anyway**.
-3. Launch the app from the Start menu.
-4. Click **Download model** and wait for the model to download (~150 MB).
-5. Press **F2** in any application to start dictating.
+### Recommended Install
+
+1. Open the latest GitHub release:
+
+   ```text
+   https://github.com/<owner>/voice-mcp-host/releases/latest
+   ```
+
+2. Download:
+
+   ```text
+   voice-mcp-host_0.1.0_x64-setup.exe
+   ```
+
+3. Double-click the installer.
+
+4. Open `voice-mcp-host` from the Start menu.
+
+5. Follow the in-app setup:
+
+   - download the transcription engine
+   - download the Whisper model
+
+6. Press `F3` in any app to dictate.
+
+### Windows Notes
+
+- No Python is required.
+- No developer tools are required.
+- The optional faster-whisper backend is bundled in the installer.
+- NVIDIA GPUs use CUDA acceleration when available.
+- AMD/Intel/no GPU machines use CPU transcription.
+- Early releases are unsigned, so Windows SmartScreen may show a warning.
+
+### Closing The App
+
+- Pressing `X` minimizes Settings and keeps dictation running.
+- Press `Quit` in Settings to fully exit the background app.
 
 ## macOS
 
-1. Download `voice-mcp-host_0.1.0_aarch64.dmg` (Apple Silicon) from the GitHub release.
-2. Open the DMG and drag the app to Applications.
-3. **First launch — Gatekeeper will block it.** Do one of the following:
-   - Right-click the app in Finder → **Open** → confirm in the dialog.
-   - Or run in Terminal: `xattr -d com.apple.quarantine /Applications/voice-mcp-host.app`
-4. On first launch, grant **Microphone** access when prompted.
-5. Grant **Accessibility** access when prompted (required for paste to work):
-   - System Settings → Privacy & Security → Accessibility → toggle on voice-mcp-host.
-6. Click **Download model** and wait for the model (~150 MB).
-7. Press **F5** in any application to start dictating.
+macOS support is still being tested.
 
-### Why Accessibility permission on macOS?
+### Test Install
 
-voice-mcp-host sends a synthetic Cmd+V keystroke to paste your dictation into the focused app.
-macOS requires Accessibility permission to send synthetic keystrokes. Without it, the paste silently does nothing — the app will detect this and tell you before attempting.
+1. Download the macOS DMG from the GitHub release when available.
+2. Open the DMG and drag `voice-mcp-host` to Applications.
+3. On first launch, unsigned builds may be blocked by Gatekeeper.
 
-### Intel Mac
-
-Intel Mac builds are planned for 0.1.1. For now, Intel Mac users can build from source:
+Use one of these options:
 
 ```bash
-git clone https://github.com/your-org/voice-mcp-host
-cd voice-mcp-host
-npm install
-npm run tauri build -- --target x86_64-apple-darwin
+xattr -d com.apple.quarantine /Applications/voice-mcp-host.app
 ```
 
-Requires: Rust, Node.js 20+, Xcode Command Line Tools.
+Or right-click the app in Finder, choose **Open**, then confirm.
+
+### macOS Permissions
+
+macOS requires:
+
+- Microphone permission for recording
+- Accessibility permission for paste
+
+Accessibility is required because voice-mcp-host sends a synthetic `Cmd+V` to paste into the focused app.
+
+Enable it here:
+
+```text
+System Settings -> Privacy & Security -> Accessibility -> voice-mcp-host
+```
+
+### macOS Hotkey
+
+The default macOS hotkey is:
+
+```text
+F5
+```
+
+## Build From Source
+
+Only contributors need this.
+
+### Windows
+
+```powershell
+npm ci
+npm run tauri dev
+```
+
+Build installer:
+
+```powershell
+npm run release:windows
+```
+
+### macOS
+
+```bash
+npm ci
+npm run tauri dev
+```
+
+Build DMG:
+
+```bash
+npm run tauri build -- --bundles dmg
+```
+
+Requires Rust, Node.js 20+, and Xcode Command Line Tools.

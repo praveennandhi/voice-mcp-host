@@ -28,7 +28,17 @@ pub struct AudioConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AsrConfig {
+    #[serde(default = "default_asr_backend")]
+    pub backend: String,
     pub model_name: String,
+    #[serde(default = "default_faster_whisper_model")]
+    pub faster_whisper_model_name: String,
+    #[serde(default = "default_faster_whisper_device")]
+    pub faster_whisper_device: String,
+    #[serde(default = "default_faster_whisper_compute_type")]
+    pub faster_whisper_compute_type: String,
+    #[serde(default)]
+    pub faster_whisper_python_path: Option<String>,
     pub model_cache_dir: Option<String>,
 }
 
@@ -81,7 +91,7 @@ fn dirs_home_path() -> PathBuf {
 }
 
 pub fn default_config() -> Config {
-    let hotkey = if cfg!(target_os = "macos") { "F5" } else { "F2" };
+    let hotkey = if cfg!(target_os = "macos") { "F5" } else { "F3" };
     Config {
         schema_version: 1,
         dictation: DictationConfig {
@@ -95,7 +105,12 @@ pub fn default_config() -> Config {
             samplerate: 16000,
         },
         asr: AsrConfig {
-            model_name: "ggml-base.en.bin".into(),
+            backend: default_asr_backend(),
+            model_name: "ggml-large-v3-turbo-q5_0.bin".into(),
+            faster_whisper_model_name: default_faster_whisper_model(),
+            faster_whisper_device: default_faster_whisper_device(),
+            faster_whisper_compute_type: default_faster_whisper_compute_type(),
+            faster_whisper_python_path: None,
             model_cache_dir: None,
         },
         insertion: InsertionConfig {
@@ -107,6 +122,22 @@ pub fn default_config() -> Config {
             verbose_transcript_logging: false,
         },
     }
+}
+
+fn default_asr_backend() -> String {
+    "whisper_cpp".into()
+}
+
+fn default_faster_whisper_model() -> String {
+    "h2oai/faster-whisper-large-v3-turbo".into()
+}
+
+fn default_faster_whisper_device() -> String {
+    if cfg!(windows) { "cuda".into() } else { "cpu".into() }
+}
+
+fn default_faster_whisper_compute_type() -> String {
+    if cfg!(windows) { "float16".into() } else { "int8".into() }
 }
 
 pub fn config_path() -> Result<PathBuf> {

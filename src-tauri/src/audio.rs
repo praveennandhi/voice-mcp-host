@@ -8,7 +8,6 @@ pub struct AudioCapture {
     buffer: Arc<Mutex<Vec<f32>>>,
     native_sample_rate: u32,
     native_channels: u16,
-    max_samples: usize,
 }
 
 // cpal::Stream is Send + Sync
@@ -83,7 +82,6 @@ impl AudioCapture {
             buffer,
             native_sample_rate,
             native_channels,
-            max_samples,
         })
     }
 
