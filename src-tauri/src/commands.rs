@@ -1,7 +1,8 @@
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
-use crate::agent::{self, AgentOutputMode, AgentSessionTurn};
+use crate::agent_provider;
 use crate::agent_runtime;
+use crate::agent_types::{AgentOutputMode, AgentSessionTurn};
 use crate::app_state::{AppState, OverlayPayload};
 use crate::asr::Transcriber;
 use crate::config::{self, Config};
@@ -130,7 +131,7 @@ pub async fn send_agent_chat(app: AppHandle, message: String) -> Result<AgentCha
         let agent_cfg = cfg.agent.clone();
         let spoken_text = result.text.clone();
         std::thread::spawn(move || {
-            if let Err(e) = agent::speak_response(&agent_cfg, &spoken_text) {
+            if let Err(e) = agent_provider::speak_response(&agent_cfg, &spoken_text) {
                 logging::write_event("agent_tts_failed", Some(serde_json::json!({
                     "error": e.to_string(),
                     "source": "chat",

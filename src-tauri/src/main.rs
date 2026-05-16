@@ -1,8 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_state;
-mod agent;
+mod agent_memory;
+mod agent_prompts;
+mod agent_provider;
 mod agent_runtime;
+mod agent_tools;
+mod agent_types;
 mod asr;
 mod audio;
 mod commands;

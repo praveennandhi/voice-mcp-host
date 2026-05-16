@@ -1,174 +1,30 @@
 use anyhow::{bail, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use crate::agent_prompts::{agent_context, agent_instructions, note_draft_context, note_draft_instructions};
+use crate::agent_types::{AgentOutputMode, AgentRequest, AgentResult, AgentSessionTurn, ToolCall};
 use crate::config::AgentConfig;
 
-pub struct AgentRequest<'a> {
-    pub command: &'a str,
-    pub selected_text: Option<&'a str>,
-    pub target_app: &'a str,
-    pub history: &'a [AgentSessionTurn],
-    pub workspace_context: Option<&'a str>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentSessionTurn {
-    pub role: String,
-    pub content: String,
-    pub mode: Option<String>,
-}
-
-pub struct AgentResult {
-    pub mode: AgentOutputMode,
-    pub text: String,
-    pub tool_call: Option<ToolCall>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentOutputMode {
-    Insert,
-    Speak,
-    Tool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub name: String,
-    #[serde(default)]
-    pub args: serde_json::Value,
-}
-
 pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<AgentResult> {
-    if !config.enabled {
-        bail!("Agent mode is not enabled. Add an OpenAI API key in Settings.");
-    }
+    ensure_openai_provider(config)?;
 
-    if config.provider != "openai" {
-        bail!("Unsupported agent provider: {}", config.provider);
-    }
-
-    let api_key = config
-        .api_key
-        .as_deref()
-        .filter(|key| !key.trim().is_empty())
-        .map(str::trim)
-        .map(str::to_string)
-        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-        .context("OpenAI API key is missing. Add it in Settings.")?;
-
-    let selected_text = request.selected_text.unwrap_or("").trim();
-    let conversation = format_history(request.history);
-    let workspace_context = request.workspace_context.unwrap_or(
-        "Workspace Notes skill is unavailable. No workspace folder is configured.",
-    );
-    let context = if selected_text.is_empty() {
-        format!(
-            "Recent conversation:\n{}\n\nWorkspace context:\n{}\n\nTarget app: {}\nUser command/content:\n{}",
-            conversation, workspace_context, request.target_app, request.command
-        )
-    } else {
-        format!(
-            "Recent conversation:\n{}\n\nWorkspace context:\n{}\n\nTarget app: {}\nUser command:\n{}\n\nSelected text:\n{}",
-            conversation, workspace_context, request.target_app, request.command, selected_text
-        )
-    };
-
-    let instructions = "You are voice-mcp-host's voice agent. Infer the user's intent from natural language, the active app, and any selected text. \
-Choose mode \"speak\" only when the best action is to answer audibly without changing the user's app: casual conversation, questions, explanations, coaching, or requests to read selected/provided text aloud. \
-Choose mode \"insert\" when the best action is to put text into the user's active app: write, rewrite, summarize, fix, translate, draft, compose, replace, improve, continue, shorten, or format. \
-Choose mode \"tool\" when the best action requires the Workspace Notes skill. If the user asks to create, save, write, append, search, list, or read files/notes in the workspace, you must use tool mode, not insert mode. \
-Selected text is context, not an automatic instruction: reading it aloud is speak; transforming it or producing replacement text is insert. \
-For speak mode, text is the natural spoken answer. For insert mode, text is exactly what should be inserted or replace the selection. \
-Workspace Notes tools, when available: workspace.list_files, workspace.read_file, workspace.search_files, workspace.save_note, workspace.create_note, workspace.append_note. \
-Tool schemas: workspace.list_files args {}; workspace.read_file args {\"path\":\"relative-file.md\"}; workspace.search_files args {\"query\":\"text to find\"}; workspace.save_note args {\"path\":\"relative-file.md\",\"content\":\"Markdown content to save\"}; workspace.create_note args {\"path\":\"relative-file.md\",\"content\":\"full Markdown content\"}; workspace.append_note args {\"path\":\"relative-file.md\",\"content\":\"Markdown content to append\"}. \
-Prefer workspace.save_note for normal user requests to add, save, write, or create notes because it creates the file if missing and appends if it already exists. Use create_note only when the user explicitly asks for a new separate file. Use append_note only when the user explicitly asks to append to an existing file. \
-Before inventing a new note filename, check the existing file list in workspace context and reuse the closest matching file, for example todo.md, to-do.md, tasks.md, ideas.md, or notes.md. If the user refers to \"that file\", \"the todo\", \"the note\", or \"these two\", use recent conversation and existing files to infer the intended path. \
-If the user says \"a note called ideas\" or similar, use \"ideas.md\" as the path. Use only relative paths inside the workspace. Prefer Markdown note files ending in .md. Never request delete. \
-Return only valid compact JSON. For speak/insert: {\"mode\":\"speak\"|\"insert\",\"text\":\"...\"}. For tools: {\"mode\":\"tool\",\"text\":\"why this tool is needed\",\"tool\":{\"name\":\"workspace.search_files\",\"args\":{\"query\":\"pricing\"}}}. Do not include markdown fences or extra keys.";
-
-    let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
-    let body = json!({
-        "model": config.model,
-        "instructions": instructions,
-        "input": context,
-    });
-
-    let response = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(90))
-        .build()
-        .context("failed to build OpenAI HTTP client")?
-        .post(url)
-        .bearer_auth(api_key)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(body.to_string())
-        .send()
-        .context("OpenAI request failed")?;
-
-    let status = response.status();
-    let response_text = response.text().unwrap_or_default();
-    if !status.is_success() {
-        bail!("OpenAI returned HTTP {status}: {response_text}");
-    }
-
-    parse_agent_result(&response_text)
+    let output = call_openai_responses(config, agent_instructions(), &agent_context(request), "OpenAI request failed")?;
+    parse_agent_result(&output)
 }
 
 pub fn draft_workspace_note(config: &AgentConfig, command: &str, path: &str, history: &[AgentSessionTurn]) -> Result<String> {
-    if !config.enabled {
-        bail!("Agent mode is not enabled. Add an OpenAI API key in Settings.");
-    }
+    ensure_openai_provider(config)?;
 
-    if config.provider != "openai" {
-        bail!("Unsupported agent provider: {}", config.provider);
-    }
-
-    let api_key = config
-        .api_key
-        .as_deref()
-        .filter(|key| !key.trim().is_empty())
-        .map(str::trim)
-        .map(str::to_string)
-        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-        .context("OpenAI API key is missing. Add it in Settings.")?;
-
-    let instructions = "You draft Markdown note file content for voice-mcp-host's Workspace Notes skill. \
-Return only the Markdown content that should be written into the file. \
-Do not include JSON, markdown fences, labels, or explanations.";
-    let input = format!(
-        "Recent conversation:\n{}\n\nTarget file: {}\nUser request:\n{}",
-        format_history(history),
-        path,
-        command
-    );
-    let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
-    let body = json!({
-        "model": config.model,
-        "instructions": instructions,
-        "input": input,
-    });
-
-    let response = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(90))
-        .build()
-        .context("failed to build OpenAI HTTP client")?
-        .post(url)
-        .bearer_auth(api_key)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(body.to_string())
-        .send()
-        .context("OpenAI note draft request failed")?;
-
-    let status = response.status();
-    let response_text = response.text().unwrap_or_default();
-    if !status.is_success() {
-        bail!("OpenAI returned HTTP {status}: {response_text}");
-    }
-
-    parse_output_text(&response_text)
+    call_openai_responses(
+        config,
+        note_draft_instructions(),
+        &note_draft_context(command, path, history),
+        "OpenAI note draft request failed",
+    )
 }
 
 pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
@@ -176,15 +32,8 @@ pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
         return Ok(());
     }
 
-    let api_key = config
-        .api_key
-        .as_deref()
-        .filter(|key| !key.trim().is_empty())
-        .map(str::trim)
-        .map(str::to_string)
-        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-        .context("OpenAI API key is missing for TTS")?;
-
+    ensure_openai_provider(config)?;
+    let api_key = openai_api_key(config).context("OpenAI API key is missing for TTS")?;
     let url = format!("{}/audio/speech", config.base_url.trim_end_matches('/'));
     let body = json!({
         "model": config.tts_model,
@@ -195,7 +44,7 @@ pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
     });
 
     let response = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(90))
+        .timeout(Duration::from_secs(90))
         .build()
         .context("failed to build OpenAI TTS HTTP client")?
         .post(url)
@@ -212,6 +61,55 @@ pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
     }
 
     play_pcm_audio(&bytes)
+}
+
+fn ensure_openai_provider(config: &AgentConfig) -> Result<()> {
+    if !config.enabled {
+        bail!("Agent mode is not enabled. Add an OpenAI API key in Settings.");
+    }
+    if config.provider != "openai" {
+        bail!("Unsupported agent provider: {}", config.provider);
+    }
+    Ok(())
+}
+
+fn call_openai_responses(config: &AgentConfig, instructions: &str, input: &str, error_context: &'static str) -> Result<String> {
+    let api_key = openai_api_key(config).context("OpenAI API key is missing. Add it in Settings.")?;
+    let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
+    let body = json!({
+        "model": config.model,
+        "instructions": instructions,
+        "input": input,
+    });
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(90))
+        .build()
+        .context("failed to build OpenAI HTTP client")?
+        .post(url)
+        .bearer_auth(api_key)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body.to_string())
+        .send()
+        .context(error_context)?;
+
+    let status = response.status();
+    let response_text = response.text().unwrap_or_default();
+    if !status.is_success() {
+        bail!("OpenAI returned HTTP {status}: {response_text}");
+    }
+
+    parse_output_text(&response_text)
+}
+
+fn openai_api_key(config: &AgentConfig) -> Option<String> {
+    config
+        .api_key
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .map(str::trim)
+        .map(str::to_string)
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
 }
 
 fn parse_output_text(body: &str) -> Result<String> {
@@ -246,31 +144,6 @@ fn parse_output_text(body: &str) -> Result<String> {
     Ok(text)
 }
 
-fn format_history(history: &[AgentSessionTurn]) -> String {
-    let turns = history
-        .iter()
-        .rev()
-        .take(12)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .map(|turn| {
-            let mode = turn
-                .mode
-                .as_deref()
-                .map(|m| format!(" ({m})"))
-                .unwrap_or_default();
-            format!("{}{}: {}", turn.role, mode, turn.content)
-        })
-        .collect::<Vec<_>>();
-
-    if turns.is_empty() {
-        "No prior turns in this session.".into()
-    } else {
-        turns.join("\n")
-    }
-}
-
 #[derive(Deserialize)]
 struct AgentJson {
     mode: String,
@@ -278,9 +151,8 @@ struct AgentJson {
     tool: Option<ToolCall>,
 }
 
-fn parse_agent_result(body: &str) -> Result<AgentResult> {
-    let output = parse_output_text(body)?;
-    let parsed = parse_agent_json(&output)
+fn parse_agent_result(output: &str) -> Result<AgentResult> {
+    let parsed = parse_agent_json(output)
         .with_context(|| format!("OpenAI agent output was not valid JSON: {output}"))?;
     let text = parsed.text.trim().to_string();
     if text.is_empty() {

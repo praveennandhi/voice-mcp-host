@@ -1,6 +1,6 @@
 use std::sync::Mutex;
-use crate::agent::AgentSessionTurn;
 use crate::agent_runtime::PendingToolCall;
+use crate::agent_types::AgentSessionTurn;
 use crate::audio::AudioCapture;
 use crate::asr::Transcriber;
 use crate::config::Config;

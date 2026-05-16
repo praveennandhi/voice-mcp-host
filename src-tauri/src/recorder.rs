@@ -1,7 +1,8 @@
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
+use crate::agent_provider;
+use crate::agent_types::AgentOutputMode;
 use crate::app_state::{AppState, OverlayPayload, RecorderState};
-use crate::agent::{self, AgentOutputMode};
 use crate::agent_runtime;
 use crate::audio::AudioCapture;
 use crate::insertion;
@@ -173,7 +174,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
                     let agent_cfg = cfg.agent.clone();
                     let spoken_text = output_text.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = agent::speak_response(&agent_cfg, &spoken_text) {
+                        if let Err(e) = agent_provider::speak_response(&agent_cfg, &spoken_text) {
                             logging::write_event("agent_tts_failed", Some(serde_json::json!({
                                 "error": e.to_string(),
                             })));
