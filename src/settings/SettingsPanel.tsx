@@ -160,38 +160,8 @@ export default function SettingsPanel() {
     ? accelerationDisplayName(status.active_acceleration)
     : 'Not installed';
   const activeMatchesPreferred = status.active_acceleration === status.preferred_acceleration;
-
-  if (IS_MACOS && status.permissions.accessibility === 'Denied' && modelReady) {
-    return (
-      <div className="settings-root">
-        <SettingsHeader title="voice-mcp-host needs permissions" />
-        <div className="settings-body">
-          <div className="section">
-            <div className="permission-row">
-              <span className="label">Microphone</span>
-              <span className={`state status-badge ${status.permissions.microphone === 'Granted' ? 'ok' : 'error'}`}>
-                {status.permissions.microphone === 'Granted' ? 'Granted' : 'Denied'}
-              </span>
-            </div>
-            <div className="permission-row">
-              <span className="label">Accessibility (required for paste)</span>
-              <span className="state status-badge error">
-                Denied
-              </span>
-              <button onClick={handleGrantAccessibility}>Grant...</button>
-            </div>
-            <p className="muted-copy">
-              Accessibility is required for voice-mcp-host to send Cmd+V to the focused app.
-              Grant it in System Settings, Privacy &amp; Security, Accessibility.
-            </p>
-            <div className="button-row">
-              <button onClick={refresh}>Re-check</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const macNeedsAccessibility = IS_MACOS && status.permissions.accessibility !== 'Granted';
+  const macMicDenied = IS_MACOS && status.permissions.microphone === 'Denied';
 
   if (!isFasterWhisper && !status.engine_downloaded) {
     return (
@@ -293,6 +263,30 @@ export default function SettingsPanel() {
       <SettingsHeader />
 
       <div className="settings-body">
+        {(macNeedsAccessibility || macMicDenied) && (
+          <div className="section permission-warning">
+            {macMicDenied && (
+              <div className="permission-row">
+                <span className="label">Microphone</span>
+                <span className="state status-badge error">Denied</span>
+              </div>
+            )}
+            {macNeedsAccessibility && (
+              <div className="permission-row">
+                <span className="label">Accessibility (required for paste)</span>
+                <span className="state status-badge error">{status.permissions.accessibility}</span>
+                <button onClick={handleGrantAccessibility}>Grant...</button>
+              </div>
+            )}
+            <p className="muted-copy">
+              Enable Accessibility for voice-mcp-host in System Settings so it can paste into the focused app.
+            </p>
+            <div className="button-row">
+              <button onClick={refresh}>Re-check</button>
+            </div>
+          </div>
+        )}
+
         <div className="section">
           <div className="form-row">
             <label>Hotkey</label>

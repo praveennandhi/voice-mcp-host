@@ -272,17 +272,8 @@ pub fn active_engine(cache_dir: &Path) -> Option<(EngineKind, PathBuf)> {
 
 /// Download the preferred precompiled whisper-cli binary. On Windows, an
 /// NVIDIA GPU selects the CUDA build; otherwise CPU is used.
+#[cfg(windows)]
 pub fn download_engine(app: &AppHandle, cache_dir: &Path) -> Result<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        for path in bundled_macos_engine_candidates() {
-            if path.exists() {
-                return Ok(path);
-            }
-        }
-        bail!("macOS whisper-cli engine was not bundled. Rebuild on macOS with cmake installed: brew install cmake && npm run tauri build");
-    }
-
     let preferred = preferred_engine_kind();
     if preferred == EngineKind::Cuda {
         match download_engine_kind(app, cache_dir, EngineKind::Cuda) {
@@ -301,6 +292,16 @@ pub fn download_engine(app: &AppHandle, cache_dir: &Path) -> Result<PathBuf> {
     }
 
     download_engine_kind(app, cache_dir, fallback_engine_kind())
+}
+
+#[cfg(target_os = "macos")]
+pub fn download_engine(_app: &AppHandle, _cache_dir: &Path) -> Result<PathBuf> {
+    for path in bundled_macos_engine_candidates() {
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+    bail!("macOS whisper-cli engine was not bundled. Rebuild on macOS with cmake installed: brew install cmake && npm run tauri build");
 }
 
 #[cfg(target_os = "macos")]
