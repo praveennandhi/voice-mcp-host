@@ -161,10 +161,7 @@ export default function SettingsPanel() {
     : 'Not installed';
   const activeMatchesPreferred = status.active_acceleration === status.preferred_acceleration;
 
-  if (IS_MACOS && (
-    status.permissions.microphone === 'Denied' ||
-    status.permissions.accessibility === 'Denied'
-  )) {
+  if (IS_MACOS && status.permissions.accessibility === 'Denied' && modelReady) {
     return (
       <div className="settings-root">
         <SettingsHeader title="voice-mcp-host needs permissions" />
@@ -178,12 +175,10 @@ export default function SettingsPanel() {
             </div>
             <div className="permission-row">
               <span className="label">Accessibility (required for paste)</span>
-              <span className={`state status-badge ${status.permissions.accessibility === 'Granted' ? 'ok' : 'error'}`}>
-                {status.permissions.accessibility === 'Granted' ? 'Granted' : 'Denied'}
+              <span className="state status-badge error">
+                Denied
               </span>
-              {status.permissions.accessibility !== 'Granted' && (
-                <button onClick={handleGrantAccessibility}>Grant...</button>
-              )}
+              <button onClick={handleGrantAccessibility}>Grant...</button>
             </div>
             <p className="muted-copy">
               Accessibility is required for voice-mcp-host to send Cmd+V to the focused app.

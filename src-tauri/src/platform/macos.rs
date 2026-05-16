@@ -51,7 +51,9 @@ impl PermissionsOps for MacosPlatform {
     }
 
     fn request_accessibility_permission(&self) -> bool {
-        // Passing true triggers the system prompt if not yet determined.
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .status();
         unsafe { accessibility_sys::AXIsProcessTrustedWithOptions(std::ptr::null()) }
     }
 }
