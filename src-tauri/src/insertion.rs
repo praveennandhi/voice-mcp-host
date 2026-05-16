@@ -46,6 +46,16 @@ pub fn paste_text(text: &str, paste_delay_ms: u64, restore_delay_ms: u64, fallba
         };
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        return PasteReport {
+            paste_status: "success".into(),
+            clipboard_restore_status: "skipped_macos_transcript_left_on_clipboard".into(),
+            error_message: String::new(),
+            recovery_action: "manual_cmd_v_available".into(),
+        };
+    }
+
     sleep_ms(restore_delay_ms);
 
     // Restore original clipboard
