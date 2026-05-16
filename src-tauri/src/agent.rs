@@ -1,5 +1,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::json;
+use std::path::Path;
+use std::process::Command;
 
 use crate::config::AgentConfig;
 
@@ -73,6 +75,53 @@ Do not include explanations, markdown fences, preambles, or labels unless the us
     parse_output_text(&response_text)
 }
 
+pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
+    if !config.enabled || !config.speak_responses || text.trim().is_empty() {
+        return Ok(());
+    }
+
+    let api_key = config
+        .api_key
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .map(str::trim)
+        .map(str::to_string)
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .context("OpenAI API key is missing for TTS")?;
+
+    let url = format!("{}/audio/speech", config.base_url.trim_end_matches('/'));
+    let body = json!({
+        "model": config.tts_model,
+        "voice": config.tts_voice,
+        "input": text,
+        "instructions": "Natural, clear assistant voice. Keep a calm, helpful tone.",
+        "response_format": "wav",
+    });
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(90))
+        .build()
+        .context("failed to build OpenAI TTS HTTP client")?
+        .post(url)
+        .bearer_auth(api_key)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body.to_string())
+        .send()
+        .context("OpenAI TTS request failed")?;
+
+    let status = response.status();
+    let bytes = response.bytes().context("failed to read OpenAI TTS response")?;
+    if !status.is_success() {
+        bail!("OpenAI TTS returned HTTP {status}: {}", String::from_utf8_lossy(&bytes));
+    }
+
+    let audio_path = std::env::temp_dir().join(format!("voice-mcp-host-tts-{}.wav", std::process::id()));
+    std::fs::write(&audio_path, &bytes).context("failed to write TTS audio file")?;
+    let play_result = play_audio_file(&audio_path);
+    let _ = std::fs::remove_file(&audio_path);
+    play_result
+}
+
 fn parse_output_text(body: &str) -> Result<String> {
     let value: serde_json::Value = serde_json::from_str(body)
         .context("OpenAI response was not valid JSON")?;
@@ -103,4 +152,54 @@ fn parse_output_text(body: &str) -> Result<String> {
         bail!("OpenAI response did not include output text");
     }
     Ok(text)
+}
+
+fn play_audio_file(path: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        let script = format!(
+            "Add-Type -AssemblyName System; $p = New-Object System.Media.SoundPlayer '{}'; $p.PlaySync()",
+            escape_powershell_path(path)
+        );
+        let output = hidden_command("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .output()
+            .context("failed to start Windows audio playback")?;
+        if output.status.success() {
+            return Ok(());
+        }
+        bail!(
+            "Windows audio playback failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("afplay")
+            .arg(path)
+            .output()
+            .context("failed to start macOS audio playback")?;
+        if output.status.success() {
+            return Ok(());
+        }
+        bail!(
+            "macOS audio playback failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+}
+
+#[cfg(windows)]
+fn escape_powershell_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\'', "''")
+}
+
+#[cfg(windows)]
+fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
 }

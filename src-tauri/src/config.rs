@@ -46,13 +46,26 @@ pub struct AsrConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
+    #[serde(default)]
     pub enabled: bool,
+    #[serde(default = "default_agent_trigger_word")]
     pub trigger_word: String,
+    #[serde(default = "default_agent_provider")]
     pub provider: String,
+    #[serde(default = "default_agent_model")]
     pub model: String,
+    #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default = "default_agent_base_url")]
     pub base_url: String,
+    #[serde(default = "default_agent_auto_replace_selection")]
     pub auto_replace_selection: bool,
+    #[serde(default)]
+    pub speak_responses: bool,
+    #[serde(default = "default_agent_tts_model")]
+    pub tts_model: String,
+    #[serde(default = "default_agent_tts_voice")]
+    pub tts_voice: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,13 +154,44 @@ pub fn default_config() -> Config {
 fn default_agent_config() -> AgentConfig {
     AgentConfig {
         enabled: false,
-        trigger_word: "agent".into(),
-        provider: "openai".into(),
-        model: "gpt-5.2".into(),
+        trigger_word: default_agent_trigger_word(),
+        provider: default_agent_provider(),
+        model: default_agent_model(),
         api_key: None,
-        base_url: "https://api.openai.com/v1".into(),
-        auto_replace_selection: true,
+        base_url: default_agent_base_url(),
+        auto_replace_selection: default_agent_auto_replace_selection(),
+        speak_responses: false,
+        tts_model: default_agent_tts_model(),
+        tts_voice: default_agent_tts_voice(),
     }
+}
+
+fn default_agent_trigger_word() -> String {
+    "agent".into()
+}
+
+fn default_agent_provider() -> String {
+    "openai".into()
+}
+
+fn default_agent_model() -> String {
+    "gpt-5.2".into()
+}
+
+fn default_agent_base_url() -> String {
+    "https://api.openai.com/v1".into()
+}
+
+fn default_agent_auto_replace_selection() -> bool {
+    true
+}
+
+fn default_agent_tts_model() -> String {
+    "gpt-4o-mini-tts".into()
+}
+
+fn default_agent_tts_voice() -> String {
+    "coral".into()
 }
 
 fn default_asr_backend() -> String {

@@ -350,6 +350,42 @@ export default function SettingsPanel() {
                   placeholder="sk-..."
                 />
               </div>
+              <div className="form-row">
+                <label>Voice reply</label>
+                <label className="inline-toggle">
+                  <input
+                    type="checkbox"
+                    checked={config.agent.speak_responses}
+                    onChange={e => handleConfigChange({ agent: { ...config.agent, speak_responses: e.target.checked } })}
+                  />
+                  <span>Speak agent responses</span>
+                </label>
+              </div>
+              {config.agent.speak_responses && (
+                <>
+                  <div className="form-row">
+                    <label>TTS voice</label>
+                    <select
+                      value={config.agent.tts_voice}
+                      onChange={e => handleConfigChange({ agent: { ...config.agent, tts_voice: e.target.value } })}
+                      style={{ maxWidth: 160 }}
+                    >
+                      {['coral', 'alloy', 'ash', 'ballad', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar'].map(voice => (
+                        <option key={voice} value={voice}>{voice}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-row">
+                    <label>TTS model</label>
+                    <input
+                      type="text"
+                      value={config.agent.tts_model}
+                      onChange={e => handleConfigChange({ agent: { ...config.agent, tts_model: e.target.value } })}
+                      style={{ maxWidth: 220 }}
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
           <div className="form-row">

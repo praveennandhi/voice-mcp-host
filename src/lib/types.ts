@@ -38,6 +38,9 @@ export interface AgentConfig {
   api_key: string | null;
   base_url: string;
   auto_replace_selection: boolean;
+  speak_responses: boolean;
+  tts_model: string;
+  tts_voice: string;
 }
 
 export interface InsertionConfig {
