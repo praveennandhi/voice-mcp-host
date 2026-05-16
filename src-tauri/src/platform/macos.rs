@@ -35,8 +35,8 @@ impl WindowTargetOps for MacosPlatform {
         capture_foreground_mac()
     }
 
-    fn focus_target(&self, _target: &TargetWindow) -> Result<(), String> {
-        Ok(())
+    fn focus_target(&self, target: &TargetWindow) -> Result<(), String> {
+        focus_target_mac(target)
     }
 }
 
@@ -138,6 +138,26 @@ fn capture_foreground_mac() -> TargetWindow {
             }
             None => TargetWindow::default(),
         }
+    }
+}
+
+fn focus_target_mac(target: &TargetWindow) -> Result<(), String> {
+    if target.process_name.trim().is_empty() {
+        return Ok(());
+    }
+
+    let status = std::process::Command::new("open")
+        .args(["-a", target.process_name.as_str()])
+        .status()
+        .map_err(|e| format!("failed to activate target app: {e}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "target app activation failed for '{}': {}",
+            target.process_name, status
+        ))
     }
 }
 

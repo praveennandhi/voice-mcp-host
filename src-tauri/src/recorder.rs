@@ -123,7 +123,7 @@ pub fn stop_and_transcribe(app: AppHandle) {
                             "target": target.context_json(),
                         })));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(80));
+                    std::thread::sleep(std::time::Duration::from_millis(focus_settle_delay_ms()));
                 }
 
                 let fallback_path = config_dir_fallback();
@@ -202,6 +202,14 @@ fn emit_overlay(app: &AppHandle, state: &str, title: &str, subtitle: &str, hide_
                 *state.overlay_state.lock().unwrap() = OverlayPayload::idle();
             }
         });
+    }
+}
+
+fn focus_settle_delay_ms() -> u64 {
+    if cfg!(target_os = "macos") {
+        250
+    } else {
+        80
     }
 }
 
