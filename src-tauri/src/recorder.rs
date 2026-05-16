@@ -14,7 +14,11 @@ pub fn start_recording(app: AppHandle) {
     // Capture focus BEFORE recording — overlay must not steal focus.
     let target = platform().capture_foreground();
     *state.target_window.lock().unwrap() = Some(target.clone());
-    *state.selected_text.lock().unwrap() = capture_selected_text().ok().flatten();
+    *state.selected_text.lock().unwrap() = if should_capture_selection(&target) {
+        capture_selected_text().ok().flatten()
+    } else {
+        None
+    };
 
     logging::write_event("recording_started", Some(target.context_json()));
 
@@ -261,6 +265,20 @@ fn capture_selected_text() -> Result<Option<String>, String> {
     } else {
         Ok(Some(copied))
     }
+}
+
+fn should_capture_selection(target: &crate::platform::TargetWindow) -> bool {
+    let process = target.process_name.to_ascii_lowercase();
+    ![
+        "cmd.exe",
+        "powershell.exe",
+        "pwsh.exe",
+        "windowsterminal.exe",
+        "terminal",
+        "iterm2",
+    ]
+    .iter()
+    .any(|blocked| process.contains(blocked))
 }
 
 fn parse_agent_command(text: &str, trigger_word: &str) -> Option<String> {
