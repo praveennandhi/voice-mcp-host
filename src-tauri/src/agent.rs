@@ -115,6 +115,60 @@ Return only valid compact JSON. For speak/insert: {\"mode\":\"speak\"|\"insert\"
     parse_agent_result(&response_text)
 }
 
+pub fn draft_workspace_note(config: &AgentConfig, command: &str, path: &str, history: &[AgentSessionTurn]) -> Result<String> {
+    if !config.enabled {
+        bail!("Agent mode is not enabled. Add an OpenAI API key in Settings.");
+    }
+
+    if config.provider != "openai" {
+        bail!("Unsupported agent provider: {}", config.provider);
+    }
+
+    let api_key = config
+        .api_key
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .map(str::trim)
+        .map(str::to_string)
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .context("OpenAI API key is missing. Add it in Settings.")?;
+
+    let instructions = "You draft Markdown note file content for voice-mcp-host's Workspace Notes skill. \
+Return only the Markdown content that should be written into the file. \
+Do not include JSON, markdown fences, labels, or explanations.";
+    let input = format!(
+        "Recent conversation:\n{}\n\nTarget file: {}\nUser request:\n{}",
+        format_history(history),
+        path,
+        command
+    );
+    let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
+    let body = json!({
+        "model": config.model,
+        "instructions": instructions,
+        "input": input,
+    });
+
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(90))
+        .build()
+        .context("failed to build OpenAI HTTP client")?
+        .post(url)
+        .bearer_auth(api_key)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body.to_string())
+        .send()
+        .context("OpenAI note draft request failed")?;
+
+    let status = response.status();
+    let response_text = response.text().unwrap_or_default();
+    if !status.is_success() {
+        bail!("OpenAI returned HTTP {status}: {response_text}");
+    }
+
+    parse_output_text(&response_text)
+}
+
 pub fn speak_response(config: &AgentConfig, text: &str) -> Result<()> {
     if !config.enabled || !config.speak_responses || text.trim().is_empty() {
         return Ok(());

@@ -24,6 +24,20 @@ pub fn run(
     }
 
     let history = state.agent_session.lock().unwrap().clone();
+    if let Some(tool) = prepare_direct_workspace_note_write(cfg, command, &history)? {
+        *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
+            user_command: command.trim().to_string(),
+            tool: tool.clone(),
+        });
+        let text = confirmation_text(&tool);
+        append_turns(state, command, &text, "confirm");
+        return Ok(AgentResult {
+            mode: AgentOutputMode::Speak,
+            text,
+            tool_call: None,
+        });
+    }
+
     let workspace_context = workspace::context(&cfg.workspace);
     let mut result = agent::run_agent(&cfg.agent, AgentRequest {
         command,
@@ -169,9 +183,16 @@ fn confirmation_text(tool: &ToolCall) -> String {
     }
 }
 
-fn coerce_workspace_note_write(command: &str, content: &str) -> Option<ToolCall> {
+fn prepare_direct_workspace_note_write(
+    cfg: &Config,
+    command: &str,
+    history: &[AgentSessionTurn],
+) -> Result<Option<ToolCall>> {
+    if !cfg.workspace.enabled {
+        return Ok(None);
+    }
+
     let lower = command.to_ascii_lowercase();
-    let asks_for_workspace = lower.contains("workspace");
     let asks_for_note = lower.contains("note") || lower.contains(".md") || lower.contains("markdown");
     let asks_for_write = lower.contains("create")
         || lower.contains("save")
@@ -179,7 +200,33 @@ fn coerce_workspace_note_write(command: &str, content: &str) -> Option<ToolCall>
         || lower.contains("put")
         || lower.contains("add");
 
-    if !(asks_for_workspace && asks_for_note && asks_for_write) {
+    if !(asks_for_note && asks_for_write) {
+        return Ok(None);
+    }
+
+    let Some(path) = extract_markdown_path(command) else {
+        return Ok(None);
+    };
+    let content = agent::draft_workspace_note(&cfg.agent, command, &path, history)?;
+    Ok(Some(ToolCall {
+        name: "workspace.create_note".into(),
+        args: serde_json::json!({
+            "path": path,
+            "content": content.trim(),
+        }),
+    }))
+}
+
+fn coerce_workspace_note_write(command: &str, content: &str) -> Option<ToolCall> {
+    let lower = command.to_ascii_lowercase();
+    let asks_for_note = lower.contains("note") || lower.contains(".md") || lower.contains("markdown");
+    let asks_for_write = lower.contains("create")
+        || lower.contains("save")
+        || lower.contains("write")
+        || lower.contains("put")
+        || lower.contains("add");
+
+    if !(asks_for_note && asks_for_write) {
         return None;
     }
 
