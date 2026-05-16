@@ -62,7 +62,6 @@ impl PermissionsOps for MacosPlatform {
 
 fn get_pasteboard_text() -> Result<String, String> {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-    use objc2_foundation::NSString;
 
     unsafe {
         let pb = NSPasteboard::generalPasteboard();

@@ -421,12 +421,17 @@ fn run_engine(engine: &Path, model: &Path, wav: &Path, language: &str, engine_ki
 }
 
 fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
-    let mut command = Command::new(program);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut command = Command::new(program);
         command.creation_flags(CREATE_NO_WINDOW);
+        return command;
     }
-    command
+
+    #[cfg(not(windows))]
+    {
+        Command::new(program)
+    }
 }

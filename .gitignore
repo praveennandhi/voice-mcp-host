@@ -4,6 +4,8 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/bundled/faster-whisper/*
 !src-tauri/bundled/faster-whisper/README.txt
+src-tauri/bundled/whisper-macos/*
+!src-tauri/bundled/whisper-macos/README.txt
 *.jsonl
 last_transcript.txt
 config.json

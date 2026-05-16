@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:frontend && node scripts/prepare-macos-engine.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -41,7 +41,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg"],
-    "resources": ["default_config.json", "sidecars/voice_mcp_asr_sidecar.py", "bundled/faster-whisper"],
+    "resources": ["default_config.json", "sidecars/voice_mcp_asr_sidecar.py", "bundled/faster-whisper", "bundled/whisper-macos"],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist",

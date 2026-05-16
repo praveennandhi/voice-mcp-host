@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
 use std::collections::hash_map::DefaultHasher;
+#[cfg(windows)]
 use std::hash::{Hash, Hasher};
 
 #[cfg(windows)]
@@ -42,6 +44,7 @@ impl TargetWindow {
     }
 }
 
+#[cfg(windows)]
 pub fn hash_title(title: &str) -> String {
     let mut hasher = DefaultHasher::new();
     title.hash(&mut hasher);
@@ -62,6 +65,7 @@ pub enum PermissionState {
     Denied,
     #[cfg(target_os = "macos")]
     Unknown,
+    #[cfg(windows)]
     NotRequired,
 }
 

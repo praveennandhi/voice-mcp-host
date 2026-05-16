@@ -3,7 +3,6 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tauri::{AppHandle, Emitter};
 
 const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
@@ -256,6 +255,14 @@ pub fn engine_candidates(cache_dir: &Path) -> Vec<(EngineKind, PathBuf)> {
             candidates.push((kind, path));
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        for path in bundled_macos_engine_candidates() {
+            if path.exists() && !candidates.iter().any(|(_, p)| p == &path) {
+                candidates.push((EngineKind::Macos, path));
+            }
+        }
+    }
     candidates
 }
 
@@ -266,6 +273,16 @@ pub fn active_engine(cache_dir: &Path) -> Option<(EngineKind, PathBuf)> {
 /// Download the preferred precompiled whisper-cli binary. On Windows, an
 /// NVIDIA GPU selects the CUDA build; otherwise CPU is used.
 pub fn download_engine(app: &AppHandle, cache_dir: &Path) -> Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        for path in bundled_macos_engine_candidates() {
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+        bail!("macOS whisper-cli engine was not bundled. Rebuild on macOS with cmake installed: brew install cmake && npm run tauri build");
+    }
+
     let preferred = preferred_engine_kind();
     if preferred == EngineKind::Cuda {
         match download_engine_kind(app, cache_dir, EngineKind::Cuda) {
@@ -284,6 +301,24 @@ pub fn download_engine(app: &AppHandle, cache_dir: &Path) -> Result<PathBuf> {
     }
 
     download_engine_kind(app, cache_dir, fallback_engine_kind())
+}
+
+#[cfg(target_os = "macos")]
+fn bundled_macos_engine_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("../Resources/bundled/whisper-macos/whisper-cli"));
+            candidates.push(exe_dir.join("bundled/whisper-macos/whisper-cli"));
+        }
+    }
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("bundled")
+            .join("whisper-macos")
+            .join("whisper-cli"),
+    );
+    candidates
 }
 
 fn download_engine_kind(app: &AppHandle, cache_dir: &Path, kind: EngineKind) -> Result<PathBuf> {
@@ -475,10 +510,10 @@ fn wmic_detects_nvidia_gpu() -> bool {
 }
 
 #[cfg(windows)]
-fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut command = Command::new(program);
+    let mut command = std::process::Command::new(program);
     command.creation_flags(CREATE_NO_WINDOW);
     command
 }
