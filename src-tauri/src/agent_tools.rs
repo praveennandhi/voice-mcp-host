@@ -121,23 +121,59 @@ fn infer_workspace_note_path(cfg: &Config, command: &str) -> Option<String> {
 
     let lower = command.to_ascii_lowercase();
     if lower.contains("todo") || lower.contains("to do") || lower.contains("task") {
-        return Some(first_existing_note(cfg, &["todo.md", "to-do.md", "tasks.md", "task.md"]).unwrap_or("todo.md").to_string());
+        return Some(best_existing_note(cfg, &["to-do", "todo", "tasks", "task"]).unwrap_or_else(|| "todo.md".to_string()));
     }
     if lower.contains("idea") {
-        return Some(first_existing_note(cfg, &["ideas.md", "idea.md", "notes.md"]).unwrap_or("ideas.md").to_string());
+        return Some(best_existing_note(cfg, &["ideas", "idea", "notes"]).unwrap_or_else(|| "ideas.md".to_string()));
     }
     if lower.contains("note") || lower.contains("notes") {
-        return Some(first_existing_note(cfg, &["notes.md", "note.md"]).unwrap_or("notes.md").to_string());
+        return Some(best_existing_note(cfg, &["notes", "note"]).unwrap_or_else(|| "notes.md".to_string()));
     }
 
     None
 }
 
-fn first_existing_note(cfg: &Config, candidates: &[&'static str]) -> Option<&'static str> {
-    candidates
-        .iter()
-        .copied()
-        .find(|path| workspace::note_exists(&cfg.workspace, path))
+fn best_existing_note(cfg: &Config, aliases: &[&str]) -> Option<String> {
+    let files = workspace::text_files(&cfg.workspace, 120).ok()?;
+    for alias in aliases {
+        if let Some(path) = files
+            .iter()
+            .find(|path| normalized_stem(path) == normalize_note_name(alias))
+        {
+            return Some(path.clone());
+        }
+    }
+
+    for alias in aliases {
+        if let Some(path) = files
+            .iter()
+            .find(|path| normalized_stem(path).contains(&normalize_note_name(alias)))
+        {
+            return Some(path.clone());
+        }
+    }
+
+    None
+}
+
+fn normalized_stem(path: &str) -> String {
+    let file_name = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".markdown")
+        .trim_end_matches(".md")
+        .trim_end_matches(".text")
+        .trim_end_matches(".txt");
+    normalize_note_name(file_name)
+}
+
+fn normalize_note_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(|ch| ch.to_lowercase())
+        .collect()
 }
 
 fn extract_markdown_path(command: &str) -> Option<String> {
@@ -146,8 +182,37 @@ fn extract_markdown_path(command: &str) -> Option<String> {
             c == '"' || c == '\'' || c == '`' || c == ',' || c == '.' || c == ':' || c == ';'
         });
         if cleaned.to_ascii_lowercase().ends_with(".md") {
-            return Some(cleaned.replace('\\', "/"));
+            return Some(clean_markdown_path(cleaned));
         }
     }
     None
+}
+
+fn clean_markdown_path(path: &str) -> String {
+    path
+        .replace('\\', "/")
+        .split('/')
+        .map(clean_markdown_segment)
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn clean_markdown_segment(segment: &str) -> String {
+    if !segment.to_ascii_lowercase().ends_with(".md") {
+        return segment.to_string();
+    }
+
+    let stem = segment[..segment.len().saturating_sub(3)]
+        .trim_matches(|c: char| !c.is_ascii_alphanumeric())
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    if stem.is_empty() {
+        "note.md".to_string()
+    } else {
+        format!("{stem}.md")
+    }
 }

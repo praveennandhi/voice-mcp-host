@@ -44,13 +44,7 @@ pub fn context(config: &WorkspaceConfig) -> String {
         );
     }
 
-    let files = root_path(config)
-        .and_then(|root| {
-            let mut files = Vec::new();
-            collect_text_files(&root, &root, &mut files, 40)?;
-            Ok(files)
-        })
-        .unwrap_or_default();
+    let files = text_files(config, 40).unwrap_or_default();
     let file_list = if files.is_empty() {
         "No existing Markdown or text files.".to_string()
     } else {
@@ -121,10 +115,15 @@ pub fn note_exists(config: &WorkspaceConfig, rel_path: &str) -> bool {
     safe_path(config, rel_path).is_ok_and(|path| path.is_file())
 }
 
-fn list_files(config: &WorkspaceConfig) -> Result<WorkspaceToolResult> {
+pub fn text_files(config: &WorkspaceConfig, limit: usize) -> Result<Vec<String>> {
     let root = root_path(config)?;
     let mut files = Vec::new();
-    collect_text_files(&root, &root, &mut files, 80)?;
+    collect_text_files(&root, &root, &mut files, limit)?;
+    Ok(files)
+}
+
+fn list_files(config: &WorkspaceConfig) -> Result<WorkspaceToolResult> {
+    let files = text_files(config, 80)?;
     let content = if files.is_empty() {
         "No Markdown or text files found.".into()
     } else {
