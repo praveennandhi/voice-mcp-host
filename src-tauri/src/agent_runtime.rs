@@ -7,6 +7,7 @@ use crate::agent_tools;
 use crate::agent_types::{AgentOutputMode, AgentRequest, AgentResult, ToolCall};
 use crate::app_state::AppState;
 use crate::config::Config;
+use crate::todoist;
 use crate::workspace;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,18 +48,18 @@ pub fn run(
         });
     }
 
-    let workspace_context = workspace::context(&cfg.workspace);
+    let tool_context = tool_context(cfg);
     let mut result = agent_provider::run_agent(&cfg.agent, AgentRequest {
         command: &command,
         selected_text,
         target_app,
         history: &history,
-        workspace_context: Some(&workspace_context),
+        workspace_context: Some(&tool_context),
     })?;
 
     if result.mode == AgentOutputMode::Insert {
         if let Some(tool) = agent_tools::coerce_workspace_note_write(cfg, &command, &result.text) {
-            if let Err(e) = workspace::validate_tool_args(&tool.name, &tool.args) {
+            if let Err(e) = validate_tool_args(cfg, &tool) {
                 let text = format!("I could not prepare that workspace action: {e}. Please include the file name and content.");
                 append_turns(state, &command, &text, "speak");
                 return Ok(AgentResult {
@@ -71,7 +72,7 @@ pub fn run(
                 user_command: command.clone(),
                 tool: tool.clone(),
             });
-            let text = agent_tools::confirmation_text(&tool);
+            let text = confirmation_text(&tool);
             append_turns(state, &command, &text, "confirm");
             return Ok(AgentResult {
                 mode: AgentOutputMode::Speak,
@@ -90,7 +91,7 @@ pub fn run(
         bail!("agent requested tool mode without a tool call");
     };
     let tool = agent_tools::normalize_workspace_tool(cfg, tool);
-    if let Err(e) = workspace::validate_tool_args(&tool.name, &tool.args) {
+    if let Err(e) = validate_tool_args(cfg, &tool) {
         let text = format!("I could not prepare that workspace action: {e}. Please include the file name and content.");
         append_turns(state, &command, &text, "speak");
         return Ok(AgentResult {
@@ -100,12 +101,12 @@ pub fn run(
         });
     }
 
-    if workspace::requires_confirmation(&tool.name) {
+    if requires_confirmation(&tool.name) {
         *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
             user_command: command.clone(),
             tool: tool.clone(),
         });
-        let text = agent_tools::confirmation_text(&tool);
+        let text = confirmation_text(&tool);
         append_turns(state, &command, &text, "confirm");
         return Ok(AgentResult {
             mode: AgentOutputMode::Speak,
@@ -114,14 +115,14 @@ pub fn run(
         });
     }
 
-    let tool_result = workspace::execute(&cfg.workspace, &tool.name, &tool.args)?;
+    let tool_result = execute_tool(cfg, &tool)?;
     let tool_history = with_tool_result(&history, &command, &tool_result.summary, &tool_result.content);
     result = agent_provider::run_agent(&cfg.agent, AgentRequest {
         command: &command,
         selected_text,
         target_app,
         history: &tool_history,
-        workspace_context: Some(&workspace_context),
+        workspace_context: Some(&tool_context),
     })?;
     append_turns(state, &command, &result.text, mode_label(result.mode));
     Ok(result)
@@ -187,7 +188,7 @@ fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Resul
         })));
     }
 
-    let tool_result = workspace::execute(&cfg.workspace, &pending.tool.name, &pending.tool.args)?;
+    let tool_result = execute_tool(cfg, &pending.tool)?;
     let text = tool_result.summary;
     append_turns(state, command, &text, "tool");
     Ok(Some(PendingResolution::Handled(AgentResult {
@@ -195,6 +196,59 @@ fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Resul
         text,
         tool_call: None,
     })))
+}
+
+struct RuntimeToolResult {
+    summary: String,
+    content: String,
+}
+
+fn tool_context(cfg: &Config) -> String {
+    format!(
+        "{}\n\n{}",
+        workspace::context(&cfg.workspace),
+        todoist::context(&cfg.connectors.todoist)
+    )
+}
+
+fn validate_tool_args(_cfg: &Config, tool: &ToolCall) -> Result<()> {
+    if tool.name.starts_with("workspace.") {
+        workspace::validate_tool_args(&tool.name, &tool.args)
+    } else if tool.name.starts_with("todoist.") {
+        todoist::validate_tool_args(&tool.name, &tool.args)
+    } else {
+        bail!("unknown tool: {}", tool.name)
+    }
+}
+
+fn requires_confirmation(name: &str) -> bool {
+    workspace::requires_confirmation(name) || todoist::requires_confirmation(name)
+}
+
+fn confirmation_text(tool: &ToolCall) -> String {
+    if tool.name.starts_with("todoist.") {
+        todoist::confirmation_text(&tool.name, &tool.args)
+    } else {
+        agent_tools::confirmation_text(tool)
+    }
+}
+
+fn execute_tool(cfg: &Config, tool: &ToolCall) -> Result<RuntimeToolResult> {
+    if tool.name.starts_with("workspace.") {
+        let result = workspace::execute(&cfg.workspace, &tool.name, &tool.args)?;
+        Ok(RuntimeToolResult {
+            summary: result.summary,
+            content: result.content,
+        })
+    } else if tool.name.starts_with("todoist.") {
+        let result = todoist::execute(&cfg.connectors.todoist, &tool.name, &tool.args)?;
+        Ok(RuntimeToolResult {
+            summary: result.summary,
+            content: result.content,
+        })
+    } else {
+        bail!("unknown tool: {}", tool.name)
+    }
 }
 
 fn extract_revised_instruction(command: &str) -> Option<String> {

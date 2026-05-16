@@ -12,6 +12,8 @@ pub struct Config {
     pub agent: AgentConfig,
     #[serde(default = "default_workspace_config")]
     pub workspace: WorkspaceConfig,
+    #[serde(default = "default_connectors_config")]
+    pub connectors: ConnectorsConfig,
     pub insertion: InsertionConfig,
     pub privacy: PrivacyConfig,
 }
@@ -76,6 +78,20 @@ pub struct WorkspaceConfig {
     pub enabled: bool,
     #[serde(default)]
     pub folder_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectorsConfig {
+    #[serde(default = "default_todoist_config")]
+    pub todoist: TodoistConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoistConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub api_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +167,7 @@ pub fn default_config() -> Config {
         },
         agent: default_agent_config(),
         workspace: default_workspace_config(),
+        connectors: default_connectors_config(),
         insertion: InsertionConfig {
             paste_delay_ms: 100,
             restore_delay_ms: 500,
@@ -159,6 +176,19 @@ pub fn default_config() -> Config {
         privacy: PrivacyConfig {
             verbose_transcript_logging: false,
         },
+    }
+}
+
+fn default_connectors_config() -> ConnectorsConfig {
+    ConnectorsConfig {
+        todoist: default_todoist_config(),
+    }
+}
+
+fn default_todoist_config() -> TodoistConfig {
+    TodoistConfig {
+        enabled: false,
+        api_token: None,
     }
 }
 

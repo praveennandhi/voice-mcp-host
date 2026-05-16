@@ -18,6 +18,7 @@ mod model_store;
 mod platform;
 mod recorder;
 mod tray;
+mod todoist;
 mod workspace;
 
 use app_state::AppState;

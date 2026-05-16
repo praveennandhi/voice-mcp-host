@@ -466,6 +466,38 @@ export default function SettingsPanel() {
             </>
           )}
           <div className="form-row">
+            <label>Todoist</label>
+            <label className="inline-toggle">
+              <input
+                type="checkbox"
+                checked={config.connectors.todoist.enabled}
+                onChange={e => handleConfigChange({
+                  connectors: {
+                    ...config.connectors,
+                    todoist: { ...config.connectors.todoist, enabled: e.target.checked },
+                  },
+                })}
+              />
+              <span>Enable Todoist tasks</span>
+            </label>
+          </div>
+          {config.connectors.todoist.enabled && (
+            <div className="form-row">
+              <label>Todoist API token</label>
+              <input
+                type="password"
+                value={config.connectors.todoist.api_token ?? ''}
+                onChange={e => handleConfigChange({
+                  connectors: {
+                    ...config.connectors,
+                    todoist: { ...config.connectors.todoist, api_token: e.target.value || null },
+                  },
+                })}
+                placeholder="Todoist integrations token"
+              />
+            </div>
+          )}
+          <div className="form-row">
             <label>Model</label>
             {isFasterWhisper ? (
               <select

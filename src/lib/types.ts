@@ -5,6 +5,7 @@ export interface Config {
   asr: AsrConfig;
   agent: AgentConfig;
   workspace: WorkspaceConfig;
+  connectors: ConnectorsConfig;
   insertion: InsertionConfig;
   privacy: PrivacyConfig;
 }
@@ -47,6 +48,15 @@ export interface AgentConfig {
 export interface WorkspaceConfig {
   enabled: boolean;
   folder_path: string | null;
+}
+
+export interface ConnectorsConfig {
+  todoist: TodoistConfig;
+}
+
+export interface TodoistConfig {
+  enabled: boolean;
+  api_token: string | null;
 }
 
 export interface InsertionConfig {

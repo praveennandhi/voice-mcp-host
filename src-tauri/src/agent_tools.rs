@@ -43,6 +43,9 @@ pub fn prepare_direct_workspace_note_write(
     }
 
     let lower = command.to_ascii_lowercase();
+    if lower.contains("todoist") {
+        return Ok(None);
+    }
     let asks_for_note = mentions_workspace_note(&lower);
     let asks_for_write = lower.contains("create")
         || lower.contains("save")
@@ -69,6 +72,9 @@ pub fn prepare_direct_workspace_note_write(
 
 pub fn coerce_workspace_note_write(cfg: &Config, command: &str, content: &str) -> Option<ToolCall> {
     let lower = command.to_ascii_lowercase();
+    if lower.contains("todoist") {
+        return None;
+    }
     let asks_for_note = mentions_workspace_note(&lower);
     let asks_for_write = lower.contains("create")
         || lower.contains("save")
@@ -108,8 +114,6 @@ fn mentions_workspace_note(lower_command: &str) -> bool {
         || lower_command.contains("markdown")
         || lower_command.contains("todo")
         || lower_command.contains("to do")
-        || lower_command.contains("task")
-        || lower_command.contains("tasks")
         || lower_command.contains("idea")
         || lower_command.contains("ideas")
 }
