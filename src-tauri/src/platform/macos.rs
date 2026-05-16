@@ -127,13 +127,12 @@ fn capture_foreground_mac() -> TargetWindow {
                     .localizedName()
                     .map(|s| s.to_string())
                     .unwrap_or_default();
-                let pid = app.processIdentifier();
                 TargetWindow {
                     hwnd: None,
                     title: String::new(), // per-window title via AX is a 0.2 refinement
                     title_hash: String::new(),
                     process_name,
-                    pid: Some(pid as u32),
+                    pid: None,
                 }
             }
             None => TargetWindow::default(),
@@ -144,31 +143,9 @@ fn capture_foreground_mac() -> TargetWindow {
 // ── macOS permission checks ───────────────────────────────────────────────────
 
 fn check_mic_permission() -> PermissionState {
-    // Use AVCaptureDevice.authorizationStatus(for: .audio) via objc2
-    // For 0.1 we use a simpler approach: try to check via AVFoundation class directly.
-    // If the check itself is unavailable, report Unknown and let cpal surface the error.
-    use objc2::runtime::AnyClass;
-    use objc2::{msg_send, sel};
-
-    unsafe {
-        let cls = match AnyClass::get(c"AVCaptureDevice") {
-            Some(c) => c,
-            None => return PermissionState::Unknown,
-        };
-
-        // AVMediaTypeAudio = "soun"
-        let media_type: *mut objc2::runtime::AnyObject = msg_send![cls, performSelector: sel!(new)];
-        // 0=notDetermined 1=restricted 2=denied 3=authorized
-        let status: i64 = msg_send![cls, authorizationStatusForMediaType: c"soun"];
-        let _ = media_type;
-
-        match status {
-            3 => PermissionState::Granted,
-            2 => PermissionState::Denied,
-            1 => PermissionState::Denied,
-            _ => PermissionState::Unknown,
-        }
-    }
+    // cpal will trigger/use the macOS microphone permission at capture time.
+    // Keep this conservative until AVFoundation bindings are added cleanly.
+    PermissionState::Unknown
 }
 
 fn check_ax_permission() -> PermissionState {
