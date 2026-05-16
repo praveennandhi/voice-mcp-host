@@ -84,7 +84,8 @@ Choose mode \"tool\" when the best action requires the Workspace Notes skill. \
 Selected text is context, not an automatic instruction: reading it aloud is speak; transforming it or producing replacement text is insert. \
 For speak mode, text is the natural spoken answer. For insert mode, text is exactly what should be inserted or replace the selection. \
 Workspace Notes tools, when available: workspace.list_files, workspace.read_file, workspace.search_files, workspace.create_note, workspace.append_note. \
-Use only relative paths inside the workspace. Prefer Markdown note files ending in .md. Never request delete. \
+Tool schemas: workspace.list_files args {}; workspace.read_file args {\"path\":\"relative-file.md\"}; workspace.search_files args {\"query\":\"text to find\"}; workspace.create_note args {\"path\":\"relative-file.md\",\"content\":\"full Markdown content\"}; workspace.append_note args {\"path\":\"relative-file.md\",\"content\":\"Markdown content to append\"}. \
+If the user says \"a note called ideas\" or similar, use \"ideas.md\" as the path. Use only relative paths inside the workspace. Prefer Markdown note files ending in .md. Never request delete. \
 Return only valid compact JSON. For speak/insert: {\"mode\":\"speak\"|\"insert\",\"text\":\"...\"}. For tools: {\"mode\":\"tool\",\"text\":\"why this tool is needed\",\"tool\":{\"name\":\"workspace.search_files\",\"args\":{\"query\":\"pricing\"}}}. Do not include markdown fences or extra keys.";
 
     let url = format!("{}/responses", config.base_url.trim_end_matches('/'));

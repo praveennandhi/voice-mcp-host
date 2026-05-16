@@ -41,6 +41,15 @@ pub fn run(
     let Some(tool) = result.tool_call.clone() else {
         bail!("agent requested tool mode without a tool call");
     };
+    if let Err(e) = workspace::validate_tool_args(&tool.name, &tool.args) {
+        let text = format!("I could not prepare that workspace action: {e}. Please include the file name and content.");
+        append_turns(state, command, &text, "speak");
+        return Ok(AgentResult {
+            mode: AgentOutputMode::Speak,
+            text,
+            tool_call: None,
+        });
+    }
 
     if workspace::requires_confirmation(&tool.name) {
         *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {

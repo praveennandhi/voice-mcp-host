@@ -48,6 +48,7 @@ pub fn context(config: &WorkspaceConfig) -> String {
 }
 
 pub fn execute(config: &WorkspaceConfig, name: &str, args: &serde_json::Value) -> Result<WorkspaceToolResult> {
+    validate_tool_args(name, args)?;
     match name {
         "workspace.list_files" => list_files(config),
         "workspace.read_file" => {
@@ -67,6 +68,26 @@ pub fn execute(config: &WorkspaceConfig, name: &str, args: &serde_json::Value) -
             let path = required_string(args, "path")?;
             let content = required_string(args, "content")?;
             write_file(config, path, content, true)
+        }
+        other => bail!("unknown workspace tool: {other}"),
+    }
+}
+
+pub fn validate_tool_args(name: &str, args: &serde_json::Value) -> Result<()> {
+    match name {
+        "workspace.list_files" => Ok(()),
+        "workspace.read_file" => {
+            required_string(args, "path")?;
+            Ok(())
+        }
+        "workspace.search_files" => {
+            required_string(args, "query")?;
+            Ok(())
+        }
+        "workspace.create_note" | "workspace.append_note" => {
+            required_string(args, "path")?;
+            required_string(args, "content")?;
+            Ok(())
         }
         other => bail!("unknown workspace tool: {other}"),
     }
