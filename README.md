@@ -27,6 +27,8 @@ Future versions are planned to add:
 - Agent mode: connect LLMs to MCP tools with approval prompts.
 - More models, backends, and platform polish.
 
+See [docs/agent-roadmap.md](docs/agent-roadmap.md) for current agent architecture notes, context-bloat risks, memory direction, and connector plans.
+
 ## Install
 
 ### Windows
