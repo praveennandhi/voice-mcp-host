@@ -12,8 +12,26 @@ use crate::config::AgentConfig;
 pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<AgentResult> {
     ensure_openai_provider(config)?;
 
-    let output = call_openai_responses(config, agent_instructions(), &agent_context(request), "OpenAI request failed")?;
-    parse_agent_result(&output)
+    let context = agent_context(request);
+    let output = call_openai_responses(config, agent_instructions(), &context, "OpenAI request failed")?;
+    match parse_agent_result(&output) {
+        Ok(result) => Ok(result),
+        Err(first_error) => {
+            let repair_input = format!(
+                "The previous model output was not valid agent JSON.\n\nPrevious output:\n{}\n\nOriginal request context:\n{}\n\nReturn only one compact valid JSON object with this schema: {{\"mode\":\"speak\"|\"insert\"|\"tool\",\"text\":\"...\",\"tool\":{{\"name\":\"...\",\"args\":{{}}}}}}. For speak or insert, omit tool or set it to null.",
+                output, context
+            );
+            let repaired = call_openai_responses(
+                config,
+                "Repair the output into valid compact JSON only. No markdown fences. No explanation.",
+                &repair_input,
+                "OpenAI JSON repair request failed",
+            )?;
+            parse_agent_result(&repaired).with_context(|| {
+                format!("OpenAI agent output was not valid JSON after repair. First error: {first_error}. Repaired output: {repaired}")
+            })
+        }
+    }
 }
 
 pub fn draft_workspace_note(config: &AgentConfig, command: &str, path: &str, history: &[AgentSessionTurn]) -> Result<String> {

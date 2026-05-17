@@ -34,6 +34,19 @@ pub fn run(
     }
 
     let history = state.agent_session.lock().unwrap().clone();
+    if let Some(tool) = direct_todoist_create(cfg, &command) {
+        *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
+            user_command: command.clone(),
+            tool: tool.clone(),
+        });
+        let text = confirmation_text(&tool);
+        append_turns(state, &command, &text, "confirm");
+        return Ok(AgentResult {
+            mode: AgentOutputMode::Speak,
+            text,
+            tool_call: None,
+        });
+    }
     if let Some(tool) = direct_todoist_followup(state, cfg, &command) {
         *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
             user_command: command.clone(),
@@ -261,6 +274,32 @@ fn confirmation_text(tool: &ToolCall) -> String {
     }
 }
 
+fn direct_todoist_create(cfg: &Config, command: &str) -> Option<ToolCall> {
+    if !cfg.connectors.todoist.enabled {
+        return None;
+    }
+
+    let lower = command.to_ascii_lowercase();
+    let mentions_todoist = lower.contains("todoist") || lower.contains("to do ist");
+    let mentions_task = lower.contains("task") || lower.contains("ask");
+    let asks_create = lower.contains("create")
+        || lower.contains("add")
+        || lower.contains("save")
+        || lower.contains("put");
+    if !(mentions_todoist && mentions_task && asks_create) {
+        return None;
+    }
+
+    let (content, due_string) = parse_todoist_task(command)?;
+    Some(ToolCall {
+        name: "todoist.create_task".into(),
+        args: serde_json::json!({
+            "content": content,
+            "due_string": due_string,
+        }),
+    })
+}
+
 fn direct_todoist_followup(state: &AppState, cfg: &Config, command: &str) -> Option<ToolCall> {
     if !cfg.connectors.todoist.enabled {
         return None;
@@ -288,6 +327,83 @@ fn direct_todoist_followup(state: &AppState, cfg: &Config, command: &str) -> Opt
             "content": task.content,
         }),
     })
+}
+
+fn parse_todoist_task(command: &str) -> Option<(String, Option<String>)> {
+    let mut text = command
+        .trim()
+        .trim_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace())
+        .to_string();
+    text = strip_leading_word(text, "agent");
+    text = strip_leading_word(text, "please");
+
+    let lower = text.to_ascii_lowercase();
+    let task_pos = lower.find("task").or_else(|| lower.find("ask"))?;
+    let mut remainder = text[task_pos..].to_string();
+    if let Some(pos) = remainder.to_ascii_lowercase().find(" to ") {
+        remainder = remainder[pos + 4..].to_string();
+    } else {
+        remainder = strip_leading_word(remainder, "task");
+        remainder = strip_leading_word(remainder, "ask");
+    }
+
+    for prefix in ["called", "named", "for", "about", "to"] {
+        remainder = strip_leading_word(remainder, prefix);
+    }
+
+    let (content, due_string) = split_todoist_due(&remainder);
+    let content = content
+        .trim()
+        .trim_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace())
+        .to_string();
+    if content.is_empty() {
+        None
+    } else {
+        Some((content, due_string))
+    }
+}
+
+fn split_todoist_due(text: &str) -> (String, Option<String>) {
+    let lower = text.to_ascii_lowercase();
+    let markers = [
+        " tomorrow",
+        " today",
+        " tonight",
+        " next ",
+        " on monday",
+        " on tuesday",
+        " on wednesday",
+        " on thursday",
+        " on friday",
+        " on saturday",
+        " on sunday",
+    ];
+
+    let due_start = markers
+        .iter()
+        .filter_map(|marker| lower.find(marker))
+        .min();
+
+    if let Some(pos) = due_start {
+        let content = text[..pos].trim().to_string();
+        let due = text[pos..].trim().to_string();
+        (content, if due.is_empty() { None } else { Some(due) })
+    } else {
+        (text.trim().to_string(), None)
+    }
+}
+
+fn strip_leading_word(text: String, word: &str) -> String {
+    let trimmed = text.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower == word {
+        String::new()
+    } else if let Some(rest) = lower.strip_prefix(&format!("{word} ")) {
+        let offset = trimmed.len() - rest.len();
+        trimmed[offset..].trim().to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn execute_tool(cfg: &Config, tool: &ToolCall) -> Result<RuntimeToolResult> {
