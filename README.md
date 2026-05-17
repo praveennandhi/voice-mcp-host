@@ -21,14 +21,6 @@ Version `0.1.0` is focused on local dictation.
 
 Windows is the primary tested platform right now. macOS support is in progress and needs real-device QA for permissions, packaging, and paste behavior.
 
-Future versions are planned to add:
-
-- Ask mode: speak a question and paste an LLM answer.
-- Agent mode: connect LLMs to MCP tools with approval prompts.
-- More models, backends, and platform polish.
-
-See [docs/agent-roadmap.md](docs/agent-roadmap.md) for current agent architecture notes, context-bloat risks, memory direction, and connector plans.
-
 ## Install
 
 ### Windows

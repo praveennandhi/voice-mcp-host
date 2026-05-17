@@ -9,5 +9,7 @@ src-tauri/bundled/whisper-macos/*
 *.jsonl
 last_transcript.txt
 config.json
+internal/
+private/
 .DS_Store
 Thumbs.db
