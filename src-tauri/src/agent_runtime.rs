@@ -34,6 +34,19 @@ pub fn run(
     }
 
     let history = state.agent_session.lock().unwrap().clone();
+    if let Some(tool) = direct_todoist_followup(state, cfg, &command) {
+        *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
+            user_command: command.clone(),
+            tool: tool.clone(),
+        });
+        let text = confirmation_text(&tool);
+        append_turns(state, &command, &text, "confirm");
+        return Ok(AgentResult {
+            mode: AgentOutputMode::Speak,
+            text,
+            tool_call: None,
+        });
+    }
     if let Some(tool) = agent_tools::prepare_direct_workspace_note_write(cfg, &command, &history)? {
         *state.pending_tool_call.lock().unwrap() = Some(PendingToolCall {
             user_command: command.clone(),
@@ -48,7 +61,7 @@ pub fn run(
         });
     }
 
-    let tool_context = tool_context(cfg);
+    let tool_context = tool_context(state, cfg);
     let mut result = agent_provider::run_agent(&cfg.agent, AgentRequest {
         command: &command,
         selected_text,
@@ -116,6 +129,7 @@ pub fn run(
     }
 
     let tool_result = execute_tool(cfg, &tool)?;
+    apply_tool_side_effects(state, &tool_result);
     let tool_history = with_tool_result(&history, &command, &tool_result.summary, &tool_result.content);
     result = agent_provider::run_agent(&cfg.agent, AgentRequest {
         command: &command,
@@ -189,6 +203,7 @@ fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Resul
     }
 
     let tool_result = execute_tool(cfg, &pending.tool)?;
+    apply_tool_side_effects(state, &tool_result);
     let text = tool_result.summary;
     append_turns(state, command, &text, "tool");
     Ok(Some(PendingResolution::Handled(AgentResult {
@@ -201,13 +216,26 @@ fn maybe_resolve_pending(state: &AppState, cfg: &Config, command: &str) -> Resul
 struct RuntimeToolResult {
     summary: String,
     content: String,
+    last_todoist_task: Option<todoist::TodoistTaskRef>,
+    clear_last_todoist_task: bool,
 }
 
-fn tool_context(cfg: &Config) -> String {
+fn tool_context(state: &AppState, cfg: &Config) -> String {
+    let last_task = state.last_todoist_task.lock().unwrap().clone();
+    let todoist_context = if let Some(task) = last_task {
+        format!(
+            "{}\nLast Todoist task: id={}, content={}",
+            todoist::context(&cfg.connectors.todoist),
+            task.id,
+            task.content
+        )
+    } else {
+        format!("{}\nLast Todoist task: none", todoist::context(&cfg.connectors.todoist))
+    };
     format!(
         "{}\n\n{}",
         workspace::context(&cfg.workspace),
-        todoist::context(&cfg.connectors.todoist)
+        todoist_context
     )
 }
 
@@ -233,21 +261,64 @@ fn confirmation_text(tool: &ToolCall) -> String {
     }
 }
 
+fn direct_todoist_followup(state: &AppState, cfg: &Config, command: &str) -> Option<ToolCall> {
+    if !cfg.connectors.todoist.enabled {
+        return None;
+    }
+    let lower = command.to_ascii_lowercase();
+    let asks_complete = lower.contains("complete")
+        || lower.contains("mark done")
+        || lower.contains("mark it done")
+        || lower.contains("check off")
+        || lower.contains("close the task")
+        || lower.contains("finish the task");
+    let refers_last = lower.contains("task you created")
+        || lower.contains("the task")
+        || lower.contains("that task")
+        || lower.contains("it");
+    if !(asks_complete && refers_last) {
+        return None;
+    }
+
+    let task = state.last_todoist_task.lock().unwrap().clone()?;
+    Some(ToolCall {
+        name: "todoist.complete_task".into(),
+        args: serde_json::json!({
+            "task_id": task.id,
+            "content": task.content,
+        }),
+    })
+}
+
 fn execute_tool(cfg: &Config, tool: &ToolCall) -> Result<RuntimeToolResult> {
     if tool.name.starts_with("workspace.") {
         let result = workspace::execute(&cfg.workspace, &tool.name, &tool.args)?;
         Ok(RuntimeToolResult {
             summary: result.summary,
             content: result.content,
+            last_todoist_task: None,
+            clear_last_todoist_task: false,
         })
     } else if tool.name.starts_with("todoist.") {
+        let clear_last_todoist_task = tool.name == "todoist.complete_task";
         let result = todoist::execute(&cfg.connectors.todoist, &tool.name, &tool.args)?;
         Ok(RuntimeToolResult {
             summary: result.summary,
             content: result.content,
+            last_todoist_task: result.task,
+            clear_last_todoist_task,
         })
     } else {
         bail!("unknown tool: {}", tool.name)
+    }
+}
+
+fn apply_tool_side_effects(state: &AppState, result: &RuntimeToolResult) {
+    if result.clear_last_todoist_task {
+        *state.last_todoist_task.lock().unwrap() = None;
+    }
+    if let Some(task) = result.last_todoist_task.clone() {
+        *state.last_todoist_task.lock().unwrap() = Some(task);
     }
 }
 

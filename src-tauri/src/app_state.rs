@@ -5,6 +5,7 @@ use crate::audio::AudioCapture;
 use crate::asr::Transcriber;
 use crate::config::Config;
 use crate::platform::TargetWindow;
+use crate::todoist::TodoistTaskRef;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -59,6 +60,7 @@ pub struct AppState {
     pub overlay_state: Mutex<OverlayPayload>,
     pub agent_session: Mutex<Vec<AgentSessionTurn>>,
     pub pending_tool_call: Mutex<Option<PendingToolCall>>,
+    pub last_todoist_task: Mutex<Option<TodoistTaskRef>>,
 }
 
 impl AppState {
@@ -73,6 +75,7 @@ impl AppState {
             overlay_state: Mutex::new(OverlayPayload::idle()),
             agent_session: Mutex::new(Vec::new()),
             pending_tool_call: Mutex::new(None),
+            last_todoist_task: Mutex::new(None),
         }
     }
 }
