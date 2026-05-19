@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, cpSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, cpSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -115,13 +115,17 @@ function bundleComplete() {
 function findFile(dir, name) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      const found = findFile(full, name);
-      if (found) return found;
-    } else if (entry === name) {
-      return full;
+    if (entry === name) {
+      return realpathSync(full);
     }
+
+    const stat = statSync(full);
+    if (!stat.isDirectory()) {
+      continue;
+    }
+
+    const found = findFile(full, name);
+    if (found) return found;
   }
   return null;
 }
