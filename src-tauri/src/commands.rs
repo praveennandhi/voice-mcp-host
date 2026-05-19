@@ -148,6 +148,7 @@ pub async fn send_agent_chat(app: AppHandle, message: String) -> Result<AgentCha
     logging::write_event("agent_chat_completed", Some(serde_json::json!({
         "mode": mode,
         "chars": result.text.len(),
+        "preview": text_preview(&result.text, 220),
     })));
 
     Ok(AgentChatResponse {
@@ -155,6 +156,20 @@ pub async fn send_agent_chat(app: AppHandle, message: String) -> Result<AgentCha
         mode,
         text: result.text,
     })
+}
+
+fn text_preview(text: &str, max_chars: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_chars {
+        normalized
+    } else {
+        let mut preview = normalized
+            .chars()
+            .take(max_chars.saturating_sub(3))
+            .collect::<String>();
+        preview.push_str("...");
+        preview
+    }
 }
 
 #[tauri::command]

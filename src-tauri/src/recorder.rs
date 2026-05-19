@@ -146,9 +146,11 @@ pub fn stop_and_transcribe(app: AppHandle) {
                             .unwrap_or("unknown"),
                     ) {
                         Ok(result) => {
+                            let preview = text_preview(&result.text, 220);
                             logging::write_event("agent_completed", Some(serde_json::json!({
                                 "chars": result.text.len(),
                                 "mode": agent_runtime::mode_label(result.mode),
+                                "preview": preview,
                             })));
                             if result.mode != AgentOutputMode::Insert {
                                 should_speak = true;
@@ -170,7 +172,8 @@ pub fn stop_and_transcribe(app: AppHandle) {
 
                 if should_speak {
                     set_state(&app_clone, RecorderState::Pasting);
-                    emit_overlay(&app_clone, "speaking", "Speaking", "Playing response", None);
+                    let preview = text_preview(&output_text, 90);
+                    emit_overlay(&app_clone, "speaking", "Answer ready", &preview, Some(7000));
                     let agent_cfg = cfg.agent.clone();
                     let spoken_text = output_text.clone();
                     std::thread::spawn(move || {
@@ -185,7 +188,6 @@ pub fn stop_and_transcribe(app: AppHandle) {
                         }
                     });
                     set_state(&app_clone, RecorderState::Ready);
-                    emit_overlay(&app_clone, "ready", "Done", "Response spoken", Some(1200));
                     return;
                 }
 
@@ -336,6 +338,20 @@ fn parse_agent_command(text: &str, trigger_word: &str) -> Option<String> {
         .trim()
         .to_string();
     Some(rest)
+}
+
+fn text_preview(text: &str, max_chars: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_chars {
+        normalized
+    } else {
+        let mut preview = normalized
+            .chars()
+            .take(max_chars.saturating_sub(3))
+            .collect::<String>();
+        preview.push_str("...");
+        preview
+    }
 }
 
 fn focus_settle_delay_ms() -> u64 {
