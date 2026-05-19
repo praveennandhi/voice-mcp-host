@@ -6,6 +6,7 @@ use crate::agent_memory::{append_turns, with_tool_result};
 use crate::agent_tools;
 use crate::agent_types::{AgentOutputMode, AgentRequest, AgentResult, ToolCall};
 use crate::app_state::AppState;
+use crate::browser;
 use crate::config::Config;
 use crate::todoist;
 use crate::workspace;
@@ -86,7 +87,7 @@ pub fn run(
     if result.mode == AgentOutputMode::Insert {
         if let Some(tool) = agent_tools::coerce_workspace_note_write(cfg, &command, &result.text) {
             if let Err(e) = validate_tool_args(cfg, &tool) {
-                let text = format!("I could not prepare that workspace action: {e}. Please include the file name and content.");
+                let text = format!("I could not prepare that tool action: {e}. Please include the missing details.");
                 append_turns(state, &command, &text, "speak");
                 return Ok(AgentResult {
                     mode: AgentOutputMode::Speak,
@@ -118,7 +119,7 @@ pub fn run(
     };
     let tool = agent_tools::normalize_workspace_tool(cfg, tool);
     if let Err(e) = validate_tool_args(cfg, &tool) {
-        let text = format!("I could not prepare that workspace action: {e}. Please include the file name and content.");
+        let text = format!("I could not prepare that tool action: {e}. Please include the missing details.");
         append_turns(state, &command, &text, "speak");
         return Ok(AgentResult {
             mode: AgentOutputMode::Speak,
@@ -246,9 +247,10 @@ fn tool_context(state: &AppState, cfg: &Config) -> String {
         format!("{}\nLast Todoist task: none", todoist::context(&cfg.connectors.todoist))
     };
     format!(
-        "{}\n\n{}",
+        "{}\n\n{}\n\n{}",
         workspace::context(&cfg.workspace),
-        todoist_context
+        todoist_context,
+        browser::context(&cfg.connectors.browser)
     )
 }
 
@@ -257,13 +259,15 @@ fn validate_tool_args(_cfg: &Config, tool: &ToolCall) -> Result<()> {
         workspace::validate_tool_args(&tool.name, &tool.args)
     } else if tool.name.starts_with("todoist.") {
         todoist::validate_tool_args(&tool.name, &tool.args)
+    } else if tool.name.starts_with("browser.") {
+        browser::validate_tool_args(&tool.name, &tool.args)
     } else {
         bail!("unknown tool: {}", tool.name)
     }
 }
 
 fn requires_confirmation(name: &str) -> bool {
-    workspace::requires_confirmation(name) || todoist::requires_confirmation(name)
+    workspace::requires_confirmation(name) || todoist::requires_confirmation(name) || browser::requires_confirmation(name)
 }
 
 fn confirmation_text(tool: &ToolCall) -> String {
@@ -423,6 +427,14 @@ fn execute_tool(cfg: &Config, tool: &ToolCall) -> Result<RuntimeToolResult> {
             content: result.content,
             last_todoist_task: result.task,
             clear_last_todoist_task,
+        })
+    } else if tool.name.starts_with("browser.") {
+        let result = browser::execute(&cfg.connectors.browser, &tool.name, &tool.args)?;
+        Ok(RuntimeToolResult {
+            summary: result.summary,
+            content: result.content,
+            last_todoist_task: None,
+            clear_last_todoist_task: false,
         })
     } else {
         bail!("unknown tool: {}", tool.name)

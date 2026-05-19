@@ -41,7 +41,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg"],
-    "resources": ["default_config.json", "sidecars/voice_mcp_asr_sidecar.py", "bundled/faster-whisper", "bundled/whisper-macos"],
+    "resources": ["default_config.json", "sidecars/voice_mcp_asr_sidecar.py", "sidecars/browser_readonly.mjs", "bundled/faster-whisper", "bundled/whisper-macos"],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist",

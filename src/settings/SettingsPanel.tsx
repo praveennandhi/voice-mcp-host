@@ -498,6 +498,22 @@ export default function SettingsPanel() {
             </div>
           )}
           <div className="form-row">
+            <label>Browser</label>
+            <label className="inline-toggle">
+              <input
+                type="checkbox"
+                checked={config.connectors.browser.enabled}
+                onChange={e => handleConfigChange({
+                  connectors: {
+                    ...config.connectors,
+                    browser: { ...config.connectors.browser, enabled: e.target.checked },
+                  },
+                })}
+              />
+              <span>Enable read-only browser tools</span>
+            </label>
+          </div>
+          <div className="form-row">
             <label>Model</label>
             {isFasterWhisper ? (
               <select

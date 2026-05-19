@@ -84,6 +84,8 @@ pub struct WorkspaceConfig {
 pub struct ConnectorsConfig {
     #[serde(default = "default_todoist_config")]
     pub todoist: TodoistConfig,
+    #[serde(default = "default_browser_config")]
+    pub browser: BrowserConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +94,12 @@ pub struct TodoistConfig {
     pub enabled: bool,
     #[serde(default)]
     pub api_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserConfig {
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +190,7 @@ pub fn default_config() -> Config {
 fn default_connectors_config() -> ConnectorsConfig {
     ConnectorsConfig {
         todoist: default_todoist_config(),
+        browser: default_browser_config(),
     }
 }
 
@@ -190,6 +199,10 @@ fn default_todoist_config() -> TodoistConfig {
         enabled: false,
         api_token: None,
     }
+}
+
+fn default_browser_config() -> BrowserConfig {
+    BrowserConfig { enabled: false }
 }
 
 fn default_workspace_config() -> WorkspaceConfig {

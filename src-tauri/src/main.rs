@@ -9,6 +9,7 @@ mod agent_tools;
 mod agent_types;
 mod asr;
 mod audio;
+mod browser;
 mod commands;
 mod config;
 mod hotkeys;

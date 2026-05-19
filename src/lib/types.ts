@@ -52,11 +52,16 @@ export interface WorkspaceConfig {
 
 export interface ConnectorsConfig {
   todoist: TodoistConfig;
+  browser: BrowserConfig;
 }
 
 export interface TodoistConfig {
   enabled: boolean;
   api_token: string | null;
+}
+
+export interface BrowserConfig {
+  enabled: boolean;
 }
 
 export interface InsertionConfig {
