@@ -17,7 +17,11 @@ pub fn context(config: &BrowserConfig) -> String {
     if !config.enabled {
         return "Browser connector is disabled.".into();
     }
-    "Browser connector is available in read-only mode. Tools: browser.open_url, browser.search_web, browser.extract_page_text. It can read public pages and search results, but it cannot click, type, log in, submit forms, or change websites.".into()
+    if config.visible {
+        "Browser connector is available in visible read-only mode. Tools: browser.open_url, browser.search_web, browser.extract_page_text. It opens searches/pages in the user's default browser for visibility, and can read public pages/search results, but it cannot click, type, log in, submit forms, or change websites.".into()
+    } else {
+        "Browser connector is available in read-only mode. Tools: browser.open_url, browser.search_web, browser.extract_page_text. It can read public pages and search results, but it cannot click, type, log in, submit forms, or change websites.".into()
+    }
 }
 
 pub fn validate_tool_args(name: &str, args: &serde_json::Value) -> Result<()> {
@@ -43,9 +47,14 @@ pub fn execute(config: &BrowserConfig, name: &str, args: &serde_json::Value) -> 
         bail!("Browser connector is disabled");
     }
     validate_tool_args(name, args)?;
+    let visible_url = if config.visible {
+        open_visible_target(name, args)?
+    } else {
+        None
+    };
 
     let Some(script) = browser_script_path() else {
-        return execute_http_fallback(name, args);
+        return execute_http_fallback(name, args, visible_url);
     };
     let payload = serde_json::json!({
         "tool": name,
@@ -60,48 +69,57 @@ pub fn execute(config: &BrowserConfig, name: &str, args: &serde_json::Value) -> 
 
     let output = match output {
         Ok(output) => output,
-        Err(_) => return execute_http_fallback(name, args),
+        Err(_) => return execute_http_fallback(name, args, visible_url),
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stderr.contains("ERR_MODULE_NOT_FOUND") || stderr.contains("Cannot find package 'playwright'") {
-            return execute_http_fallback(name, args);
+            return execute_http_fallback(name, args, visible_url);
         }
         bail!("browser sidecar failed: {}{}", stderr.trim(), sidecar_stdout(&stdout));
     }
 
-    let result: BrowserToolResult = serde_json::from_slice(&output.stdout)
+    let mut result: BrowserToolResult = serde_json::from_slice(&output.stdout)
         .context("browser sidecar returned invalid JSON")?;
+    if let Some(visible_url) = visible_url {
+        result.summary = format!("{} Opened visibly: {visible_url}", result.summary);
+        result.content = attach_visible_url(&result.content, &visible_url);
+    }
     Ok(result)
 }
 
-fn execute_http_fallback(name: &str, args: &serde_json::Value) -> Result<BrowserToolResult> {
+fn execute_http_fallback(name: &str, args: &serde_json::Value, visible_url: Option<String>) -> Result<BrowserToolResult> {
     match name {
-        "browser.search_web" => search_web_http(required_string(args, "query")?),
-        "browser.open_url" | "browser.extract_page_text" => read_page_http(name, required_string(args, "url")?),
+        "browser.search_web" => search_web_http(required_string(args, "query")?, visible_url),
+        "browser.open_url" | "browser.extract_page_text" => read_page_http(name, required_string(args, "url")?, visible_url),
         other => bail!("unknown browser tool: {other}"),
     }
 }
 
-fn search_web_http(query: &str) -> Result<BrowserToolResult> {
+fn search_web_http(query: &str, visible_url: Option<String>) -> Result<BrowserToolResult> {
     let url = format!("https://www.bing.com/search?format=rss&q={}", url_encode(query));
     let body = http_get(&url)?;
     let items = extract_rss_items(&body);
     Ok(BrowserToolResult {
         tool: "browser.search_web".into(),
-        summary: format!("Found {} web results for: {query}", items.len()),
+        summary: if let Some(ref visible_url) = visible_url {
+            format!("Found {} web results for: {query}. Opened visibly: {visible_url}", items.len())
+        } else {
+            format!("Found {} web results for: {query}", items.len())
+        },
         content: serde_json::json!({
             "query": query,
             "results": items,
-            "fallback": "rust_http"
+            "fallback": "rust_http",
+            "visible_url": visible_url
         })
         .to_string(),
     })
 }
 
-fn read_page_http(name: &str, url: &str) -> Result<BrowserToolResult> {
+fn read_page_http(name: &str, url: &str, visible_url: Option<String>) -> Result<BrowserToolResult> {
     validate_url(url)?;
     let body = http_get(url)?;
     let title = extract_between_case_insensitive(&body, "<title", "</title>")
@@ -112,18 +130,75 @@ fn read_page_http(name: &str, url: &str) -> Result<BrowserToolResult> {
     Ok(BrowserToolResult {
         tool: name.into(),
         summary: format!(
-            "{} page: {}",
+            "{} page: {}{}",
             if name == "browser.open_url" { "Opened" } else { "Read" },
-            title
+            title,
+            visible_url
+                .as_ref()
+                .map(|url| format!(". Opened visibly: {url}"))
+                .unwrap_or_default()
         ),
         content: serde_json::json!({
             "title": title,
             "url": url,
             "text": text,
-            "fallback": "rust_http"
+            "fallback": "rust_http",
+            "visible_url": visible_url
         })
         .to_string(),
     })
+}
+
+fn open_visible_target(name: &str, args: &serde_json::Value) -> Result<Option<String>> {
+    let url = match name {
+        "browser.search_web" => {
+            let query = required_string(args, "query")?;
+            format!("https://www.google.com/search?q={}", url_encode(query))
+        }
+        "browser.open_url" | "browser.extract_page_text" => required_string(args, "url")?.to_string(),
+        _ => return Ok(None),
+    };
+    open_url_in_default_browser(&url)?;
+    Ok(Some(url))
+}
+
+fn open_url_in_default_browser(url: &str) -> Result<()> {
+    #[cfg(windows)]
+    {
+        Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
+            .spawn()
+            .context("failed to open visible browser")?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .context("failed to open visible browser")?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .context("failed to open visible browser")?;
+    }
+    Ok(())
+}
+
+fn attach_visible_url(content: &str, visible_url: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(content) {
+        Ok(mut value) => {
+            value["visible_url"] = serde_json::json!(visible_url);
+            value.to_string()
+        }
+        Err(_) => serde_json::json!({
+            "text": content,
+            "visible_url": visible_url
+        })
+        .to_string(),
+    }
 }
 
 fn http_get(url: &str) -> Result<String> {

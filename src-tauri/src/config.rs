@@ -100,6 +100,8 @@ pub struct TodoistConfig {
 pub struct BrowserConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub visible: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,7 +204,10 @@ fn default_todoist_config() -> TodoistConfig {
 }
 
 fn default_browser_config() -> BrowserConfig {
-    BrowserConfig { enabled: false }
+    BrowserConfig {
+        enabled: false,
+        visible: false,
+    }
 }
 
 fn default_workspace_config() -> WorkspaceConfig {

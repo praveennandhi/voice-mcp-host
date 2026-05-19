@@ -62,6 +62,7 @@ export interface TodoistConfig {
 
 export interface BrowserConfig {
   enabled: boolean;
+  visible: boolean;
 }
 
 export interface InsertionConfig {
