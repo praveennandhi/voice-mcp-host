@@ -3,6 +3,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use crate::agent_prompts::{agent_context, agent_instructions, note_draft_context, note_draft_instructions};
@@ -100,24 +101,42 @@ fn call_openai_responses(config: &AgentConfig, instructions: &str, input: &str, 
         "input": input,
     });
 
-    let response = reqwest::blocking::Client::builder()
+    let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(90))
         .build()
-        .context("failed to build OpenAI HTTP client")?
-        .post(url)
-        .bearer_auth(api_key)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(body.to_string())
-        .send()
-        .context(error_context)?;
+        .context("failed to build OpenAI HTTP client")?;
 
-    let status = response.status();
-    let response_text = response.text().unwrap_or_default();
-    if !status.is_success() {
-        bail!("OpenAI returned HTTP {status}: {response_text}");
+    let mut last_error = String::new();
+    for attempt in 0..3 {
+        let response = client
+            .post(&url)
+            .bearer_auth(&api_key)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body.to_string())
+            .send()
+            .context(error_context)?;
+
+        let status = response.status();
+        let response_text = response.text().unwrap_or_default();
+        if status.is_success() {
+            return parse_output_text(&response_text);
+        }
+
+        last_error = format!("OpenAI returned HTTP {status}: {response_text}");
+        if !is_retryable_openai_status(status) || attempt == 2 {
+            bail!("{last_error}");
+        }
+
+        thread::sleep(Duration::from_millis(600 * (attempt + 1) as u64));
     }
 
-    parse_output_text(&response_text)
+    bail!("{last_error}")
+}
+
+fn is_retryable_openai_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status == reqwest::StatusCode::REQUEST_TIMEOUT
+        || status.is_server_error()
 }
 
 fn openai_api_key(config: &AgentConfig) -> Option<String> {
