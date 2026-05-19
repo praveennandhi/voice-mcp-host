@@ -14,25 +14,70 @@ pub fn run_agent(config: &AgentConfig, request: AgentRequest<'_>) -> Result<Agen
     ensure_openai_provider(config)?;
 
     let context = agent_context(request);
-    let output = call_openai_responses(config, agent_instructions(), &context, "OpenAI request failed")?;
+    run_agent_with_instructions(config, agent_instructions(), &context, true)
+}
+
+pub fn run_agent_after_tool(config: &AgentConfig, request: AgentRequest<'_>) -> Result<AgentResult> {
+    ensure_openai_provider(config)?;
+
+    let context = agent_context(request);
+    let instructions = format!(
+        "{} \
+A tool has already been executed for this user request and its result is included in context. \
+You must now answer the user from that tool result. Return only mode \"speak\" or \"insert\". Never return mode \"tool\" in this step.",
+        agent_instructions()
+    );
+    run_agent_with_instructions(config, &instructions, &context, false)
+}
+
+fn run_agent_with_instructions(
+    config: &AgentConfig,
+    instructions: &str,
+    context: &str,
+    allow_tools: bool,
+) -> Result<AgentResult> {
+    let output = call_openai_responses(config, instructions, context, "OpenAI request failed")?;
     match parse_agent_result(&output) {
-        Ok(result) => Ok(result),
+        Ok(result) if allow_tools || result.mode != AgentOutputMode::Tool => Ok(result),
+        Ok(result) => repair_agent_output(config, context, &result.text, None, allow_tools),
         Err(first_error) => {
-            let repair_input = format!(
-                "The previous model output was not valid agent JSON.\n\nPrevious output:\n{}\n\nOriginal request context:\n{}\n\nReturn only one compact valid JSON object with this schema: {{\"mode\":\"speak\"|\"insert\"|\"tool\",\"text\":\"...\",\"tool\":{{\"name\":\"...\",\"args\":{{}}}}}}. For speak or insert, omit tool or set it to null.",
-                output, context
-            );
-            let repaired = call_openai_responses(
-                config,
-                "Repair the output into valid compact JSON only. No markdown fences. No explanation.",
-                &repair_input,
-                "OpenAI JSON repair request failed",
-            )?;
-            parse_agent_result(&repaired).with_context(|| {
-                format!("OpenAI agent output was not valid JSON after repair. First error: {first_error}. Repaired output: {repaired}")
-            })
+            repair_agent_output(config, context, &output, Some(first_error.to_string()), allow_tools)
         }
     }
+}
+
+fn repair_agent_output(
+    config: &AgentConfig,
+    context: &str,
+    output: &str,
+    first_error: Option<String>,
+    allow_tools: bool,
+) -> Result<AgentResult> {
+    let schema = if allow_tools {
+        "{\"mode\":\"speak\"|\"insert\"|\"tool\",\"text\":\"...\",\"tool\":{\"name\":\"...\",\"args\":{}}}. For speak or insert, omit tool or set it to null."
+    } else {
+        "{\"mode\":\"speak\"|\"insert\",\"text\":\"...\"}. Do not return tool mode."
+    };
+    let repair_input = format!(
+        "The previous model output was not acceptable agent JSON for this step.\n\nPrevious output:\n{}\n\nOriginal request context:\n{}\n\nReturn only one compact valid JSON object with this schema: {}",
+        output, context, schema
+    );
+    let repaired = call_openai_responses(
+        config,
+        "Repair the output into valid compact JSON only. No markdown fences. No explanation.",
+        &repair_input,
+        "OpenAI JSON repair request failed",
+    )?;
+    let result = parse_agent_result(&repaired).with_context(|| {
+        format!(
+            "OpenAI agent output was not valid JSON after repair. First error: {}. Repaired output: {repaired}",
+            first_error.unwrap_or_else(|| "tool mode was not allowed after tool execution".into())
+        )
+    })?;
+    if !allow_tools && result.mode == AgentOutputMode::Tool {
+        bail!("OpenAI returned tool mode after a tool already ran. Repaired output: {repaired}");
+    }
+    Ok(result)
 }
 
 pub fn draft_workspace_note(config: &AgentConfig, command: &str, path: &str, history: &[AgentSessionTurn]) -> Result<String> {

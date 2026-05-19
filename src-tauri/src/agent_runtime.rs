@@ -145,7 +145,7 @@ pub fn run(
     let tool_result = execute_tool(cfg, &tool)?;
     apply_tool_side_effects(state, &tool_result);
     let tool_history = with_tool_result(&history, &command, &tool_result.summary, &tool_result.content);
-    result = agent_provider::run_agent(&cfg.agent, AgentRequest {
+    result = agent_provider::run_agent_after_tool(&cfg.agent, AgentRequest {
         command: &command,
         selected_text,
         target_app,
