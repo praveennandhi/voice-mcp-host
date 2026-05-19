@@ -22,6 +22,7 @@ const requiredDylibs = [
 
 if (bundleComplete()) {
   console.log(`Bundled macOS whisper engine already exists: ${outDir}`);
+  repairBundleMetadata();
   signBundleIfConfigured();
   process.exit(0);
 }
@@ -101,8 +102,7 @@ for (const dylib of requiredDylibs) {
 }
 execFileSync('chmod', ['755', outBin], { stdio: 'inherit' });
 execFileSync('chmod', ['755', outServer], { stdio: 'inherit' });
-rewriteRpath(outBin);
-rewriteRpath(outServer);
+repairBundleMetadata();
 signBundleIfConfigured();
 console.log(`Bundled macOS whisper engine: ${outDir}`);
 
@@ -130,10 +130,15 @@ function findFile(dir, name) {
   return null;
 }
 
+function repairBundleMetadata() {
+  rewriteRpath(outBin);
+  rewriteRpath(outServer);
+}
+
 function rewriteRpath(binary) {
   const existing = execFileSync('otool', ['-l', binary], { encoding: 'utf8' });
-  if (!existing.includes('@executable_path')) {
-    execFileSync('install_name_tool', ['-add_rpath', '@executable_path', binary], { stdio: 'inherit' });
+  if (!existing.includes('@loader_path')) {
+    execFileSync('install_name_tool', ['-add_rpath', '@loader_path', binary], { stdio: 'inherit' });
   }
 }
 
