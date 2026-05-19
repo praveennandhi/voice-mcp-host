@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, cpSync } from 'node:fs';
+import { existsSync, mkdirSync, cpSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -11,9 +11,18 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'src-tauri', 'bundled', 'whisper-macos');
 const outBin = join(outDir, 'whisper-cli');
 const outServer = join(outDir, 'whisper-server');
+const requiredDylibs = [
+  'libwhisper.1.dylib',
+  'libggml.0.dylib',
+  'libggml-cpu.0.dylib',
+  'libggml-blas.0.dylib',
+  'libggml-metal.0.dylib',
+  'libggml-base.0.dylib',
+];
 
-if (existsSync(outBin) && existsSync(outServer)) {
-  console.log(`Bundled macOS whisper binaries already exist: ${outDir}`);
+if (bundleComplete()) {
+  console.log(`Bundled macOS whisper engine already exists: ${outDir}`);
+  signBundleIfConfigured();
   process.exit(0);
 }
 
@@ -82,7 +91,69 @@ if (!builtServer) {
 
 cpSync(built, outBin);
 cpSync(builtServer, outServer);
+for (const dylib of requiredDylibs) {
+  const source = findFile(buildDir, dylib);
+  if (!source) {
+    console.error(`Required whisper dependency was not found: ${dylib}`);
+    process.exit(1);
+  }
+  cpSync(source, join(outDir, dylib), { dereference: true });
+}
 execFileSync('chmod', ['755', outBin], { stdio: 'inherit' });
 execFileSync('chmod', ['755', outServer], { stdio: 'inherit' });
-console.log(`Bundled macOS whisper-cli: ${outBin}`);
-console.log(`Bundled macOS whisper-server: ${outServer}`);
+rewriteRpath(outBin);
+rewriteRpath(outServer);
+signBundleIfConfigured();
+console.log(`Bundled macOS whisper engine: ${outDir}`);
+
+function bundleComplete() {
+  return existsSync(outBin)
+    && existsSync(outServer)
+    && requiredDylibs.every((name) => existsSync(join(outDir, name)));
+}
+
+function findFile(dir, name) {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    const stat = statSync(full);
+    if (stat.isDirectory()) {
+      const found = findFile(full, name);
+      if (found) return found;
+    } else if (entry === name) {
+      return full;
+    }
+  }
+  return null;
+}
+
+function rewriteRpath(binary) {
+  const existing = execFileSync('otool', ['-l', binary], { encoding: 'utf8' });
+  if (!existing.includes('@executable_path')) {
+    execFileSync('install_name_tool', ['-add_rpath', '@executable_path', binary], { stdio: 'inherit' });
+  }
+}
+
+function signBundleIfConfigured() {
+  const identity = process.env.APPLE_SIGNING_IDENTITY;
+  if (!identity) {
+    return;
+  }
+
+  for (const dylib of requiredDylibs) {
+    sign(join(outDir, dylib), identity);
+  }
+  sign(outBin, identity);
+  sign(outServer, identity);
+}
+
+function sign(path, identity) {
+  execFileSync('codesign', [
+    '--force',
+    '--options',
+    'runtime',
+    '--timestamp',
+    '--sign',
+    identity,
+    path,
+  ], { stdio: 'inherit' });
+}
